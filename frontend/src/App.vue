@@ -96,7 +96,7 @@ watch(navPoints, () => {
 })
 
 async function initializeWorkbench(): Promise<void> {
-  await Promise.all([loadAlipayFundPool(), searchFunds()])
+  await Promise.all([loadAlipayFundPool(), searchFunds(false)])
   const firstCode = alipayFundPool.value[0]?.fundCode ?? DEFAULT_FUND_CODE
   await selectFund(firstCode)
 }
@@ -109,10 +109,14 @@ async function loadAlipayFundPool(): Promise<void> {
   }
 }
 
-async function searchFunds(): Promise<void> {
+async function searchFunds(autoSelectFirst = true): Promise<void> {
   loading.search = true
   try {
-    fundOptions.value = await fundApi.search(searchKeyword.value.trim())
+    const results = await fundApi.search(searchKeyword.value.trim())
+    fundOptions.value = results
+    if (autoSelectFirst && results.length > 0) {
+      await selectFund(results[0].fundCode)
+    }
   } catch (error) {
     ElMessage.error(errorMessage(error, '基金搜索失败'))
   } finally {
