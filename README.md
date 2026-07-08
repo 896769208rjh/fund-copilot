@@ -1,53 +1,26 @@
 # Fund Copilot
 
-Fund Copilot is an AI-powered customer service system for mutual fund scenarios. It is designed to help users understand fund products, trading rules, NAV data, portfolio status, order progress, investor education content, and compliance-related explanations through traceable and risk-aware conversations.
+Fund Copilot is an AI-powered mutual fund customer service workspace. V1 provides fund search, Eastmoney data sync, NAV trend charts, metric analysis, compliance guardrails, and an AgentScope-based fund analysis flow.
 
-This project is built on Spring Boot and is planned to integrate Spring AI Alibaba for LLM access, RAG retrieval, tool calling, streaming chat, and domain-specific fund service workflows.
+## Tech Stack
 
-## Goals
+- Backend: Java 17, Spring Boot 3.4.5, Spring AI Alibaba 1.0.0.2, AgentScope Java 1.0.12, MyBatis-Plus
+- Data: H2 for local demo, MySQL profile for persistence, Redis reserved for cache/session use
+- Frontend: Vue 3, Vite, TypeScript, Element Plus, ECharts
+- Data source: Eastmoney/Tiantian Fund public fund data
 
-- Provide intelligent Q&A for fund products, fees, risks, managers, announcements, and trading rules.
-- Support source-grounded answers through retrieval-augmented generation.
-- Connect structured business data such as NAV, orders, holdings, and transaction status.
-- Keep financial responses compliance-aware, conservative, and traceable.
-- Offer a foundation for both end-user service and customer support assistant scenarios.
+## V1 Capabilities
 
-## Planned Capabilities
-
-- Fund product knowledge base and document retrieval
-- Trading rule explanation for subscription, redemption, confirmation, and settlement
-- NAV, performance, and announcement lookup
-- Portfolio and order query through secure tool calling
-- Risk disclosure and investor education responses
-- Streaming chat with progress events and source references
-- Manual support handoff for sensitive or unresolved issues
-
-## Tech Direction
-
-- Java
-- Spring Boot
-- Spring AI Alibaba
-- Vue 3
-- Vite
-- DashScope-compatible LLM and embedding models
-- RAG and vector search
-- MySQL for business data
-- Redis for cache and session support
-- REST and streaming conversation APIs
-
-## Project Status
-
-The repository currently contains the initial Spring Boot project skeleton. Domain modules, AI integration, retrieval pipelines, and business tools will be added incrementally.
+- Search fund code/name and load detail data
+- Sync a single fund from Eastmoney with local fallback data
+- Show latest NAV, trading status, historical NAV curve, return, drawdown, and volatility
+- Keep an Alipay-focused fund pool for demo scenarios
+- Run non-streaming and SSE Agent analysis with compliance reminders
+- Avoid buy/sell recommendations and future return promises
 
 ## Quick Start
 
 Backend:
-
-```bash
-./mvnw spring-boot:run
-```
-
-On Windows:
 
 ```bash
 mvnw.cmd spring-boot:run
@@ -61,13 +34,43 @@ npm install
 npm run dev
 ```
 
-Production build:
+Open the frontend URL printed by Vite. The frontend dev server proxies `/api` to `http://localhost:8080`.
+
+## Optional MySQL And Redis
 
 ```bash
+docker compose up -d
+mvnw.cmd spring-boot:run -Dspring-boot.run.profiles=mysql
+```
+
+The default profile uses H2 in-memory tables and seed data, so MySQL/Redis are not required for the first demo.
+
+## LLM Configuration
+
+Local deterministic analysis is enabled by default. To call DashScope through AgentScope:
+
+```bash
+set DASHSCOPE_API_KEY=your_key
+set FUND_AGENT_ENABLE_LLM=true
+mvnw.cmd spring-boot:run
+```
+
+## Verification
+
+```bash
+mvn test
 cd frontend
+npm run type-check
 npm run build
 ```
 
-## Repository
+## Public APIs
 
-GitHub: https://github.com/896769208rjh/fund-copilot
+- `GET /api/funds/search?keyword=`
+- `GET /api/funds/{fundCode}`
+- `GET /api/funds/{fundCode}/nav?limit=120`
+- `GET /api/funds/{fundCode}/analysis`
+- `POST /api/funds/{fundCode}/sync`
+- `GET /api/alipay/fund-pool`
+- `POST /api/agents/fund-analysis`
+- `POST /api/agents/fund-analysis/stream`

@@ -1,0 +1,29 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: fund-copilot-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: fund_copilot_root
+      MYSQL_DATABASE: fund_copilot
+      MYSQL_USER: fund_copilot
+      MYSQL_PASSWORD: fund_copilot
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+
+  redis:
+    image: redis:7.4
+    container_name: fund-copilot-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+
+volumes:
+  mysql-data:
+  redis-data:

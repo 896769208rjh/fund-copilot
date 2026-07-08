@@ -1,0 +1,47 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: fund-copilot
+  datasource:
+    driver-class-name: org.h2.Driver
+    url: jdbc:h2:mem:fundcopilot;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  sql:
+    init:
+      mode: always
+      encoding: UTF-8
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 2s
+  ai:
+    dashscope:
+      api-key: ${DASHSCOPE_API_KEY:fund-copilot-demo-key}
+      chat:
+        options:
+          model: ${DASHSCOPE_CHAT_MODEL:qwen-plus}
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: auto
+
+fund-copilot:
+  market-data:
+    eastmoney:
+      timeout-seconds: 6
+      nav-page-size: 120
+      request-interval-ms: 300
+  agent:
+    model-name: ${DASHSCOPE_CHAT_MODEL:qwen-plus}
+    enable-llm: ${FUND_AGENT_ENABLE_LLM:false}
