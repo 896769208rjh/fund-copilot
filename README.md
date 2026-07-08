@@ -27,6 +27,8 @@ This project is built on Spring Boot and is planned to integrate Spring AI Aliba
 - Java
 - Spring Boot
 - Spring AI Alibaba
+- Vue 3
+- Vite
 - DashScope-compatible LLM and embedding models
 - RAG and vector search
 - MySQL for business data
@@ -39,6 +41,8 @@ The repository currently contains the initial Spring Boot project skeleton. Doma
 
 ## Quick Start
 
+Backend:
+
 ```bash
 ./mvnw spring-boot:run
 ```
@@ -47,6 +51,21 @@ On Windows:
 
 ```bash
 mvnw.cmd spring-boot:run
+```
+
+Frontend:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Production build:
+
+```bash
+cd frontend
+npm run build
 ```
 
 ## Repository
