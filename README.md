@@ -62,7 +62,7 @@ V1 已完成第一版闭环：
 fund-copilot
 ├── frontend                  # Vue 3 + TypeScript 前端工作台
 ├── src/main/java
-│   └── edu/rjh/fundcopilot
+│   └── fundcopilot
 │       ├── agent             # AgentScope 分析编排
 │       ├── chat              # 统一聊天入口预留
 │       ├── common            # 通用响应与异常处理
