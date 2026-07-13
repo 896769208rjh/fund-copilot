@@ -67,3 +67,83 @@ CREATE TABLE IF NOT EXISTS agent_run_log (
     error_message VARCHAR(1024),
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS agent_task (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    task_no VARCHAR(64) NOT NULL,
+    fund_code VARCHAR(16) NOT NULL,
+    question VARCHAR(1024),
+    request_key VARCHAR(64),
+    status VARCHAR(32) NOT NULL,
+    restricted BOOLEAN NOT NULL DEFAULT FALSE,
+    final_answer TEXT,
+    disclaimer VARCHAR(1024),
+    error_message VARCHAR(1024),
+    state_snapshot TEXT,
+    next_stage_code VARCHAR(64),
+    retry_count INT NOT NULL DEFAULT 0,
+    deadline_at TIMESTAMP,
+    started_at TIMESTAMP,
+    completed_at TIMESTAMP,
+    elapsed_ms BIGINT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_agent_task_no (task_no),
+    KEY idx_agent_task_fund_code_created_at (fund_code, created_at),
+    KEY idx_agent_task_request_status (request_key, status)
+);
+
+CREATE TABLE IF NOT EXISTS agent_task_event (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    task_id BIGINT NOT NULL,
+    sequence_no BIGINT NOT NULL,
+    event_type VARCHAR(64) NOT NULL,
+    payload_json TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_agent_task_event_sequence (task_id, sequence_no),
+    KEY idx_agent_task_event_task_id (task_id)
+);
+
+CREATE TABLE IF NOT EXISTS agent_task_stage (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    task_id BIGINT NOT NULL,
+    stage_code VARCHAR(64) NOT NULL,
+    stage_name VARCHAR(128) NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    summary VARCHAR(2048),
+    sort_order INT NOT NULL,
+    started_at TIMESTAMP,
+    completed_at TIMESTAMP,
+    elapsed_ms BIGINT,
+    error_message VARCHAR(1024),
+    stage_input TEXT,
+    stage_output TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_agent_task_stage (task_id, stage_code),
+    KEY idx_agent_task_stage_task_id (task_id)
+);
+
+CREATE TABLE IF NOT EXISTS agent_report_section (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    task_id BIGINT NOT NULL,
+    stage_code VARCHAR(64) NOT NULL,
+    section_type VARCHAR(64) NOT NULL,
+    title VARCHAR(128) NOT NULL,
+    content TEXT NOT NULL,
+    sort_order INT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_agent_report_section_task_id (task_id)
+);
+
+CREATE TABLE IF NOT EXISTS agent_memory_entry (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    fund_code VARCHAR(16) NOT NULL,
+    task_id BIGINT NOT NULL,
+    question VARCHAR(1024),
+    summary TEXT,
+    risk_summary TEXT,
+    reflection TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_agent_memory_fund_code_created_at (fund_code, created_at)
+);

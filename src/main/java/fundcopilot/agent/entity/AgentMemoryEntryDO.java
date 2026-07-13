@@ -8,16 +8,15 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("agent_run_log")
-public class AgentRunLogDO {
+@TableName("agent_memory_entry")
+public class AgentMemoryEntryDO {
     @TableId(type = IdType.AUTO)
     private Long id;
-    private String agentName;
     private String fundCode;
+    private Long taskId;
     private String question;
-    private String toolTrace;
-    private String status;
-    private Long elapsedMs;
-    private String errorMessage;
+    private String summary;
+    private String riskSummary;
+    private String reflection;
     private LocalDateTime createdAt;
 }
