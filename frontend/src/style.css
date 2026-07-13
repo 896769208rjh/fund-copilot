@@ -672,6 +672,25 @@ h3 {
   margin-top: 12px;
 }
 
+.thinking-mode-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.thinking-mode-control > span {
+  flex: 0 0 auto;
+  color: #526272;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.thinking-mode-control .el-segmented {
+  width: min(100%, 360px);
+}
+
 .progress-messages {
   display: flex;
   flex-wrap: wrap;
@@ -850,6 +869,15 @@ h3 {
 
   .agent-action-buttons {
     justify-content: stretch;
+  }
+
+  .thinking-mode-control {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .thinking-mode-control .el-segmented {
+    width: 100%;
   }
 
   .workspace-actions,

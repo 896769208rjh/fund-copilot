@@ -22,6 +22,7 @@ import type {
   AgentAnalysisResponse,
   AgentStep,
   AgentStreamEvent,
+  AgentThinkingMode,
   FundAgentReportSection,
   FundAgentStage,
   FundAgentTask,
@@ -49,6 +50,7 @@ const analysis = ref<FundAnalysisResult | null>(null)
 const comparison = ref<FundCompareResult | null>(null)
 const compareInput = ref('000001, 110022, 161725')
 const agentQuestion = ref(DEFAULT_QUESTION)
+const agentThinkingMode = ref<AgentThinkingMode>('BALANCED')
 const agentEvents = ref<AgentStreamEvent[]>([])
 const agentAnswer = ref('')
 const agentGeneratedAt = ref('')
@@ -57,6 +59,12 @@ const taskHistory = ref<FundAgentTask[]>([])
 const liveStages = ref<FundAgentStage[]>([])
 const liveSections = ref<FundAgentReportSection[]>([])
 const chartRef = ref<HTMLDivElement | null>(null)
+
+const thinkingModeOptions = [
+  { label: '快速思考', value: 'FAST' },
+  { label: '适中思考', value: 'BALANCED' },
+  { label: '仔细思考', value: 'DEEP' },
+] satisfies Array<{ label: string; value: AgentThinkingMode }>
 
 const loading = reactive({
   search: false,
@@ -340,6 +348,7 @@ async function runAgentAnalysis(): Promise<void> {
     question: agentQuestion.value.trim() || DEFAULT_QUESTION,
     includeHistory: true,
     includeRiskNotice: true,
+    thinkingMode: agentThinkingMode.value,
   }
 
   try {
@@ -566,6 +575,9 @@ async function downloadCurrentReport(): Promise<void> {
 
 function applyTaskSnapshot(task: FundAgentTask | null): void {
   agentTask.value = task
+  if (task !== null) {
+    agentThinkingMode.value = task.thinkingMode
+  }
   liveStages.value = task?.stages ?? []
   liveSections.value = task?.sections ?? []
 }
@@ -1049,6 +1061,14 @@ function isFundAgentReportSection(payload: unknown): payload is FundAgentReportS
               </header>
 
               <section class="question-block">
+                <div class="thinking-mode-control">
+                  <span>思考强度</span>
+                  <el-segmented
+                    v-model="agentThinkingMode"
+                    :options="thinkingModeOptions"
+                    :disabled="loading.agent"
+                  />
+                </div>
                 <el-input
                   v-model="agentQuestion"
                   type="textarea"

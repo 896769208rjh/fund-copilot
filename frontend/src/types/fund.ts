@@ -81,11 +81,14 @@ export interface AgentStep {
   detail: string
 }
 
+export type AgentThinkingMode = 'FAST' | 'BALANCED' | 'DEEP'
+
 export interface FundAnalysisRequest {
   fundCode: string
   question: string
   includeHistory: boolean
   includeRiskNotice: boolean
+  thinkingMode: AgentThinkingMode
 }
 
 export interface AgentAnalysisResponse {
@@ -128,6 +131,7 @@ export interface FundAgentTask {
   taskNo: string
   fundCode: string
   question: string
+  thinkingMode: AgentThinkingMode
   status: string
   restricted: boolean
   finalAnswer: string | null
