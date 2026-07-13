@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import fundcopilot.fund.constant.FundConstants;
 import fundcopilot.marketdata.MarketDataDtos.MarketFundSnapshot;
+import fundcopilot.marketdata.MarketDataDtos.MarketFundSearchItem;
 import fundcopilot.marketdata.MarketDataDtos.MarketNavPoint;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,6 +26,7 @@ public class EastmoneyFundDataProvider implements FundDataProvider {
     private static final String DEFAULT_FUND_TYPE = "未知类型";
     private static final String DEFAULT_STATUS = "以销售平台确认为准";
     private static final String DEFAULT_RISK_LEVEL = "请以基金销售平台风险等级为准";
+    private static final int SEARCH_LIMIT = 20;
 
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
@@ -43,14 +45,19 @@ public class EastmoneyFundDataProvider implements FundDataProvider {
     public MarketFundSnapshot fetchSnapshot(String fundCode) {
         try {
             throttle();
+            MarketFundSearchItem searchItem = searchFunds(fundCode)
+                    .stream()
+                    .filter(item -> fundCode.equals(item.fundCode()))
+                    .findFirst()
+                    .orElse(null);
             List<MarketNavPoint> navPoints = fetchNavPoints(fundCode);
             MarketNavPoint latest = navPoints.isEmpty() ? null : navPoints.get(0);
             return new MarketFundSnapshot(
                     fundCode,
-                    "基金 " + fundCode,
-                    DEFAULT_FUND_TYPE,
-                    "东方财富公开数据",
-                    "以基金公告为准",
+                    searchItem == null ? "基金 " + fundCode : searchItem.fundName(),
+                    searchItem == null ? DEFAULT_FUND_TYPE : fallbackText(searchItem.fundType(), DEFAULT_FUND_TYPE),
+                    searchItem == null ? "东方财富公开数据" : fallbackText(searchItem.fundCompany(), "东方财富公开数据"),
+                    searchItem == null ? "以基金公告为准" : fallbackText(searchItem.fundManager(), "以基金公告为准"),
                     DEFAULT_RISK_LEVEL,
                     DEFAULT_STATUS,
                     DEFAULT_STATUS,
@@ -64,6 +71,50 @@ public class EastmoneyFundDataProvider implements FundDataProvider {
         } catch (Exception exception) {
             LOGGER.warn("Fetch eastmoney fund data failed, fundCode={}", fundCode, exception);
             return fallbackSnapshot(fundCode);
+        }
+    }
+
+    @Override
+    public List<MarketFundSearchItem> searchFunds(String keyword) {
+        if (keyword == null || keyword.isBlank()) {
+            return List.of();
+        }
+
+        try {
+            throttle();
+            String response = restClient.get()
+                    .uri(uriBuilder -> uriBuilder
+                            .scheme("https")
+                            .host("fundsuggest.eastmoney.com")
+                            .path("/FundSearch/api/FundSearchAPI.ashx")
+                            .queryParam("m", 1)
+                            .queryParam("key", keyword.trim())
+                            .build())
+                    .retrieve()
+                    .body(String.class);
+            if (response == null || response.isBlank()) {
+                return List.of();
+            }
+
+            JsonNode dataList = objectMapper.readTree(response).path("Datas");
+            if (!dataList.isArray()) {
+                return List.of();
+            }
+
+            List<MarketFundSearchItem> searchItems = new ArrayList<>();
+            for (JsonNode item : dataList) {
+                if (searchItems.size() >= SEARCH_LIMIT) {
+                    break;
+                }
+                MarketFundSearchItem searchItem = toSearchItem(item);
+                if (searchItem != null) {
+                    searchItems.add(searchItem);
+                }
+            }
+            return searchItems;
+        } catch (Exception exception) {
+            LOGGER.warn("Search eastmoney fund failed, keyword={}", keyword, exception);
+            return List.of();
         }
     }
 
@@ -134,6 +185,33 @@ public class EastmoneyFundDataProvider implements FundDataProvider {
                 LocalDateTime.now(),
                 points
         );
+    }
+
+    private MarketFundSearchItem toSearchItem(JsonNode item) {
+        String fundCode = item.path("CODE").asText(null);
+        JsonNode baseInfo = item.path("FundBaseInfo");
+        if (fundCode == null || fundCode.isBlank()) {
+            fundCode = baseInfo.path("FCODE").asText(null);
+        }
+        if (fundCode == null || fundCode.isBlank()) {
+            return null;
+        }
+
+        String fundName = fallbackText(baseInfo.path("SHORTNAME").asText(null), item.path("NAME").asText("基金 " + fundCode));
+        return new MarketFundSearchItem(
+                fundCode,
+                fundName,
+                baseInfo.path("FTYPE").asText(null),
+                baseInfo.path("JJGS").asText(null),
+                baseInfo.path("JJJL").asText(null),
+                parseDecimal(baseInfo.path("DWJZ").asText(null)),
+                parseDate(baseInfo.path("FSRQ").asText(null)),
+                FundConstants.EASTMONEY_FUND_PAGE_PREFIX + fundCode + ".html"
+        );
+    }
+
+    private String fallbackText(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
     }
 
     private void throttle() {

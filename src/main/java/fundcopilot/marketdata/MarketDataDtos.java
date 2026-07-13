@@ -27,6 +27,18 @@ public final class MarketDataDtos {
     ) {
     }
 
+    public record MarketFundSearchItem(
+            String fundCode,
+            String fundName,
+            String fundType,
+            String fundCompany,
+            String fundManager,
+            BigDecimal latestNav,
+            LocalDate latestNavDate,
+            String sourceUrl
+    ) {
+    }
+
     public record MarketNavPoint(
             LocalDate navDate,
             BigDecimal unitNav,

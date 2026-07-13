@@ -1,7 +1,9 @@
 package fundcopilot.fund.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fasterxml.jackson.core.type.TypeReference;
 import fundcopilot.compliance.ComplianceService;
+import fundcopilot.common.FundCacheService;
 import fundcopilot.fund.entity.AlipayFundPoolDO;
 import fundcopilot.fund.entity.FundMetricSnapshotDO;
 import fundcopilot.fund.entity.FundNavDO;
@@ -11,28 +13,47 @@ import fundcopilot.fund.mapper.FundMetricSnapshotMapper;
 import fundcopilot.fund.mapper.FundNavMapper;
 import fundcopilot.fund.mapper.FundProfileMapper;
 import fundcopilot.fund.vo.FundAnalysisResultVO;
+import fundcopilot.fund.vo.FundCompareColumnVO;
+import fundcopilot.fund.vo.FundCompareResultVO;
+import fundcopilot.fund.vo.FundCompareRowVO;
 import fundcopilot.fund.vo.FundDetailVO;
 import fundcopilot.fund.vo.FundMetricVO;
 import fundcopilot.fund.vo.FundNavPointVO;
 import fundcopilot.fund.vo.FundSearchItemVO;
 import fundcopilot.marketdata.FundDataProvider;
 import fundcopilot.marketdata.MarketDataDtos.MarketFundSnapshot;
+import fundcopilot.marketdata.MarketDataDtos.MarketFundSearchItem;
 import fundcopilot.marketdata.MarketDataDtos.MarketNavPoint;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.function.Function;
 
 @Service
 public class FundQueryService {
     private static final int DEFAULT_NAV_LIMIT = 120;
+    private static final int MAX_COMPARE_FUND_SIZE = 6;
     private static final String DATA_SOURCE_NAME = "东方财富/天天基金公开数据";
     private static final String HIGH_RISK_LEVEL = "高风险";
+    private static final Duration SEARCH_CACHE_TTL = Duration.ofMinutes(10);
+    private static final Duration FUND_CACHE_TTL = Duration.ofMinutes(15);
+    private static final Duration COMPARE_CACHE_TTL = Duration.ofMinutes(10);
+    private static final String CACHE_PREFIX_SEARCH = "fund:search:";
+    private static final String CACHE_PREFIX_DETAIL = "fund:detail:";
+    private static final String CACHE_PREFIX_NAV = "fund:nav:";
+    private static final String CACHE_PREFIX_ANALYSIS = "fund:analysis:";
+    private static final String CACHE_PREFIX_COMPARE = "fund:compare:";
 
     private final FundProfileMapper fundProfileMapper;
     private final FundNavMapper fundNavMapper;
@@ -40,23 +61,37 @@ public class FundQueryService {
     private final AlipayFundPoolMapper alipayFundPoolMapper;
     private final FundDataProvider fundDataProvider;
     private final FundMetricCalculator fundMetricCalculator;
+    private final FundCacheService fundCacheService;
 
     public FundQueryService(FundProfileMapper fundProfileMapper,
                             FundNavMapper fundNavMapper,
                             FundMetricSnapshotMapper fundMetricSnapshotMapper,
                             AlipayFundPoolMapper alipayFundPoolMapper,
                             FundDataProvider fundDataProvider,
-                            FundMetricCalculator fundMetricCalculator) {
+                            FundMetricCalculator fundMetricCalculator,
+                            FundCacheService fundCacheService) {
         this.fundProfileMapper = fundProfileMapper;
         this.fundNavMapper = fundNavMapper;
         this.fundMetricSnapshotMapper = fundMetricSnapshotMapper;
         this.alipayFundPoolMapper = alipayFundPoolMapper;
         this.fundDataProvider = fundDataProvider;
         this.fundMetricCalculator = fundMetricCalculator;
+        this.fundCacheService = fundCacheService;
     }
 
     public List<FundSearchItemVO> search(String keyword) {
         String safeKeyword = keyword == null ? "" : keyword.trim();
+        String cacheKey = CACHE_PREFIX_SEARCH + cacheToken(safeKeyword);
+        return fundCacheService.get(cacheKey, new TypeReference<List<FundSearchItemVO>>() {
+                })
+                .orElseGet(() -> {
+                    List<FundSearchItemVO> result = doSearch(safeKeyword);
+                    fundCacheService.set(cacheKey, result, SEARCH_CACHE_TTL);
+                    return result;
+                });
+    }
+
+    private List<FundSearchItemVO> doSearch(String safeKeyword) {
         LambdaQueryWrapper<FundProfileDO> wrapper = new LambdaQueryWrapper<>();
         if (!safeKeyword.isBlank()) {
             wrapper.and(condition -> condition
@@ -66,7 +101,8 @@ public class FundQueryService {
         }
         wrapper.orderByAsc(FundProfileDO::getFundCode).last("limit 20");
 
-        return fundProfileMapper.selectList(wrapper)
+        Map<String, FundSearchItemVO> resultMap = new LinkedHashMap<>();
+        fundProfileMapper.selectList(wrapper)
                 .stream()
                 .map(profile -> new FundSearchItemVO(
                         profile.getFundCode(),
@@ -75,10 +111,31 @@ public class FundQueryService {
                         profile.getRiskLevel(),
                         findAlipayTag(profile.getFundCode())
                 ))
-                .toList();
+                .forEach(item -> resultMap.put(item.fundCode(), item));
+
+        if (!safeKeyword.isBlank()) {
+            fundDataProvider.searchFunds(safeKeyword)
+                    .stream()
+                    .map(this::toSearchItemVO)
+                    .forEach(item -> resultMap.putIfAbsent(item.fundCode(), item));
+        }
+
+        return resultMap.values().stream().limit(20).toList();
     }
 
     public FundDetailVO getDetail(String fundCode) {
+        String safeFundCode = normalizeFundCode(fundCode);
+        String cacheKey = CACHE_PREFIX_DETAIL + safeFundCode;
+        return fundCacheService.get(cacheKey, new TypeReference<FundDetailVO>() {
+                })
+                .orElseGet(() -> {
+                    FundDetailVO detailVO = doGetDetail(safeFundCode);
+                    fundCacheService.set(cacheKey, detailVO, FUND_CACHE_TTL);
+                    return detailVO;
+                });
+    }
+
+    private FundDetailVO doGetDetail(String fundCode) {
         FundProfileDO profileDO = findProfile(fundCode);
         if (profileDO == null) {
             syncFund(fundCode);
@@ -91,7 +148,19 @@ public class FundQueryService {
     }
 
     public List<FundNavPointVO> getNavPoints(String fundCode, Integer limit) {
+        String safeFundCode = normalizeFundCode(fundCode);
         int safeLimit = limit == null || limit <= 0 ? DEFAULT_NAV_LIMIT : Math.min(limit, DEFAULT_NAV_LIMIT);
+        String cacheKey = CACHE_PREFIX_NAV + safeFundCode + ":" + safeLimit;
+        return fundCacheService.get(cacheKey, new TypeReference<List<FundNavPointVO>>() {
+                })
+                .orElseGet(() -> {
+                    List<FundNavPointVO> navPoints = doGetNavPoints(safeFundCode, safeLimit);
+                    fundCacheService.set(cacheKey, navPoints, FUND_CACHE_TTL);
+                    return navPoints;
+                });
+    }
+
+    private List<FundNavPointVO> doGetNavPoints(String fundCode, int safeLimit) {
         LambdaQueryWrapper<FundNavDO> wrapper = new LambdaQueryWrapper<FundNavDO>()
                 .eq(FundNavDO::getFundCode, fundCode)
                 .orderByDesc(FundNavDO::getNavDate)
@@ -105,6 +174,18 @@ public class FundQueryService {
     }
 
     public FundAnalysisResultVO analyze(String fundCode) {
+        String safeFundCode = normalizeFundCode(fundCode);
+        String cacheKey = CACHE_PREFIX_ANALYSIS + safeFundCode;
+        return fundCacheService.get(cacheKey, new TypeReference<FundAnalysisResultVO>() {
+                })
+                .orElseGet(() -> {
+                    FundAnalysisResultVO resultVO = doAnalyze(safeFundCode);
+                    fundCacheService.set(cacheKey, resultVO, FUND_CACHE_TTL);
+                    return resultVO;
+                });
+    }
+
+    private FundAnalysisResultVO doAnalyze(String fundCode) {
         FundDetailVO detail = getDetail(fundCode);
         List<FundNavDO> navList = loadNavList(fundCode, DEFAULT_NAV_LIMIT);
         FundMetricSnapshotDO metricSnapshotDO = findMetric(fundCode);
@@ -130,17 +211,31 @@ public class FundQueryService {
         );
     }
 
+    public FundCompareResultVO compare(String codesText) {
+        List<String> fundCodes = parseCompareFundCodes(codesText);
+        String cacheKey = CACHE_PREFIX_COMPARE + cacheToken(String.join(",", fundCodes));
+        return fundCacheService.get(cacheKey, new TypeReference<FundCompareResultVO>() {
+                })
+                .orElseGet(() -> {
+                    FundCompareResultVO resultVO = doCompare(fundCodes);
+                    fundCacheService.set(cacheKey, resultVO, COMPARE_CACHE_TTL);
+                    return resultVO;
+                });
+    }
+
     @Transactional(rollbackFor = Exception.class)
     public FundDetailVO syncFund(String fundCode) {
-        MarketFundSnapshot snapshot = fundDataProvider.fetchSnapshot(fundCode);
+        String safeFundCode = normalizeFundCode(fundCode);
+        MarketFundSnapshot snapshot = fundDataProvider.fetchSnapshot(safeFundCode);
         FundProfileDO profileDO = upsertProfile(snapshot);
-        upsertNavPoints(fundCode, snapshot.navPoints());
+        upsertNavPoints(safeFundCode, snapshot.navPoints());
 
-        List<FundNavDO> navList = loadNavList(fundCode, DEFAULT_NAV_LIMIT);
+        List<FundNavDO> navList = loadNavList(safeFundCode, DEFAULT_NAV_LIMIT);
         if (!navList.isEmpty()) {
-            upsertMetric(fundMetricCalculator.calculate(fundCode, navList));
+            upsertMetric(fundMetricCalculator.calculate(safeFundCode, navList));
         }
 
+        evictFundCache(safeFundCode);
         return toDetailVO(profileDO);
     }
 
@@ -316,7 +411,131 @@ public class FundQueryService {
         return baseRisks;
     }
 
+    private FundCompareResultVO doCompare(List<String> fundCodes) {
+        List<FundAnalysisResultVO> analyses = fundCodes.stream()
+                .map(this::analyze)
+                .toList();
+        List<FundCompareColumnVO> columns = analyses.stream()
+                .map(analysis -> new FundCompareColumnVO(
+                        analysis.detail().fundCode(),
+                        analysis.detail().fundName(),
+                        analysis.detail().fundType(),
+                        analysis.detail().riskLevel()
+                ))
+                .toList();
+        List<FundCompareRowVO> rows = List.of(
+                compareRow("基金类型", analyses, analysis -> fallbackText(analysis.detail().fundType())),
+                compareRow("基金公司", analyses, analysis -> fallbackText(analysis.detail().fundCompany())),
+                compareRow("基金经理", analyses, analysis -> fallbackText(analysis.detail().fundManager())),
+                compareRow("风险等级", analyses, analysis -> fallbackText(analysis.detail().riskLevel())),
+                compareRow("最新净值", analyses, analysis -> formatDecimal(analysis.detail().latestNav())),
+                compareRow("净值日期", analyses, analysis -> Objects.toString(analysis.detail().latestNavDate(), "暂无")),
+                compareRow("申购/赎回", analyses, analysis -> fallbackText(analysis.detail().purchaseStatus())
+                        + " / " + fallbackText(analysis.detail().redeemStatus())),
+                compareRow("近1月收益率", analyses, analysis -> formatPercent(analysis.metrics().oneMonthReturn())),
+                compareRow("近3月收益率", analyses, analysis -> formatPercent(analysis.metrics().threeMonthReturn())),
+                compareRow("近6月收益率", analyses, analysis -> formatPercent(analysis.metrics().sixMonthReturn())),
+                compareRow("近1年收益率", analyses, analysis -> formatPercent(analysis.metrics().oneYearReturn())),
+                compareRow("最大回撤", analyses, analysis -> formatPercent(analysis.metrics().maxDrawdown())),
+                compareRow("年化波动率", analyses, analysis -> formatPercent(analysis.metrics().volatility())),
+                compareRow("数据来源", analyses, FundAnalysisResultVO::dataSource)
+        );
+        return new FundCompareResultVO(columns, rows, buildCompareSummary(analyses), LocalDateTime.now());
+    }
+
+    private FundCompareRowVO compareRow(String dimension,
+                                        List<FundAnalysisResultVO> analyses,
+                                        Function<FundAnalysisResultVO, String> valueFunction) {
+        return new FundCompareRowVO(
+                dimension,
+                analyses.stream().map(valueFunction).toList()
+        );
+    }
+
+    private String buildCompareSummary(List<FundAnalysisResultVO> analyses) {
+        String returnLeader = findMetricLeader(analyses, analysis -> analysis.metrics().oneYearReturn());
+        String drawdownLeader = findMetricLeader(analyses, analysis -> analysis.metrics().maxDrawdown());
+        String volatilityLeader = findMetricLeader(analyses, analysis -> analysis.metrics().volatility());
+        return "小结："
+                + returnLeader + "近一年收益率相对更高；"
+                + drawdownLeader + "最大回撤相对更低；"
+                + volatilityLeader + "年化波动率相对更高。"
+                + "以上仅用于历史数据横向比较，不构成投资建议。";
+    }
+
+    private String findMetricLeader(List<FundAnalysisResultVO> analyses,
+                                    Function<FundAnalysisResultVO, BigDecimal> metricFunction) {
+        return analyses.stream()
+                .filter(analysis -> metricFunction.apply(analysis) != null)
+                .max(Comparator.comparing(metricFunction))
+                .map(analysis -> analysis.detail().fundName() + "（" + analysis.detail().fundCode() + "）")
+                .orElse("暂无基金");
+    }
+
+    private List<String> parseCompareFundCodes(String codesText) {
+        if (codesText == null || codesText.isBlank()) {
+            throw new IllegalArgumentException("基金代码不能为空");
+        }
+        Map<String, String> fundCodeMap = new LinkedHashMap<>();
+        for (String rawCode : codesText.split("[\\s,，;；]+")) {
+            if (rawCode.isBlank()) {
+                continue;
+            }
+            String fundCode = normalizeFundCode(rawCode);
+            fundCodeMap.putIfAbsent(fundCode, fundCode);
+        }
+        if (fundCodeMap.isEmpty()) {
+            throw new IllegalArgumentException("基金代码不能为空");
+        }
+        if (fundCodeMap.size() > MAX_COMPARE_FUND_SIZE) {
+            throw new IllegalArgumentException("最多支持同时对比 " + MAX_COMPARE_FUND_SIZE + " 只基金");
+        }
+        return new ArrayList<>(fundCodeMap.keySet());
+    }
+
+    private FundSearchItemVO toSearchItemVO(MarketFundSearchItem searchItem) {
+        return new FundSearchItemVO(
+                searchItem.fundCode(),
+                searchItem.fundName(),
+                searchItem.fundType(),
+                null,
+                "东方财富"
+        );
+    }
+
+    private String normalizeFundCode(String fundCode) {
+        if (fundCode == null || fundCode.isBlank()) {
+            throw new IllegalArgumentException("基金代码不能为空");
+        }
+        String safeFundCode = fundCode.trim();
+        if (!safeFundCode.matches("\\d{6}")) {
+            throw new IllegalArgumentException("基金代码必须是6位数字: " + fundCode);
+        }
+        return safeFundCode;
+    }
+
+    private void evictFundCache(String fundCode) {
+        fundCacheService.delete(List.of(
+                CACHE_PREFIX_DETAIL + fundCode,
+                CACHE_PREFIX_ANALYSIS + fundCode,
+                CACHE_PREFIX_NAV + fundCode + ":" + DEFAULT_NAV_LIMIT,
+                CACHE_PREFIX_SEARCH + cacheToken(fundCode)
+        ));
+    }
+
+    private String cacheToken(String value) {
+        return URLEncoder.encode(Objects.toString(value, ""), StandardCharsets.UTF_8);
+    }
+
+    private String fallbackText(String value) {
+        return value == null || value.isBlank() ? "暂无" : value;
+    }
+
     private String formatPercent(BigDecimal value) {
         return value == null ? "暂无" : value.stripTrailingZeros().toPlainString() + "%";
+    }
+
+    private String formatDecimal(BigDecimal value) {
+        return value == null ? "暂无" : value.stripTrailingZeros().toPlainString();
     }
 }

@@ -3,6 +3,7 @@ package fundcopilot.fund.controller;
 import fundcopilot.common.ApiResponse;
 import fundcopilot.fund.service.FundQueryService;
 import fundcopilot.fund.vo.FundAnalysisResultVO;
+import fundcopilot.fund.vo.FundCompareResultVO;
 import fundcopilot.fund.vo.FundDetailVO;
 import fundcopilot.fund.vo.FundNavPointVO;
 import fundcopilot.fund.vo.FundSearchItemVO;
@@ -27,6 +28,11 @@ public class FundController {
     @GetMapping("/search")
     public ApiResponse<List<FundSearchItemVO>> search(@RequestParam(required = false) String keyword) {
         return ApiResponse.ok(fundQueryService.search(keyword));
+    }
+
+    @GetMapping("/compare")
+    public ApiResponse<FundCompareResultVO> compare(@RequestParam String codes) {
+        return ApiResponse.ok(fundQueryService.compare(codes));
     }
 
     @GetMapping("/{fundCode}")

@@ -24,7 +24,7 @@ spring:
       timeout: 2s
   ai:
     dashscope:
-      api-key: ${DASHSCOPE_API_KEY:fund-copilot-demo-key}
+      api-key: ${DASHSCOPE_API_KEY:fund-copilot-disabled-key}
       chat:
         options:
           model: ${DASHSCOPE_CHAT_MODEL:qwen-plus}
@@ -43,5 +43,12 @@ fund-copilot:
       nav-page-size: 120
       request-interval-ms: 300
   agent:
+    api-key: ${DASHSCOPE_API_KEY:}
     model-name: ${DASHSCOPE_CHAT_MODEL:qwen-plus}
     enable-llm: ${FUND_AGENT_ENABLE_LLM:false}
+    stage-max-iterations: ${FUND_AGENT_STAGE_MAX_ITERATIONS:3}
+    final-max-iterations: ${FUND_AGENT_FINAL_MAX_ITERATIONS:6}
+    request-timeout-seconds: ${FUND_AGENT_REQUEST_TIMEOUT_SECONDS:60}
+    task-timeout-seconds: ${FUND_AGENT_TASK_TIMEOUT_SECONDS:300}
+  cache:
+    redis-enabled: ${FUND_CACHE_REDIS_ENABLED:true}
