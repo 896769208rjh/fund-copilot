@@ -7,7 +7,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest
+@SpringBootTest(properties = "fund-copilot.agent.enable-llm=false")
 class FundQueryServiceTest {
     @Autowired
     private FundQueryService fundQueryService;

@@ -4,6 +4,8 @@ server:
 spring:
   application:
     name: fund-copilot
+  config:
+    import: optional:file:./config/application-private.yml
   datasource:
     driver-class-name: org.h2.Driver
     url: jdbc:h2:mem:fundcopilot;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
@@ -43,8 +45,9 @@ fund-copilot:
       nav-page-size: 120
       request-interval-ms: 300
   agent:
-    api-key: ${DASHSCOPE_API_KEY:}
-    model-name: ${DASHSCOPE_CHAT_MODEL:qwen-plus}
+    base-url: ${FUND_OPENAI_BASE_URL:}
+    api-key: ${FUND_OPENAI_API_KEY:}
+    model-name: ${FUND_OPENAI_MODEL:gpt-5.4}
     enable-llm: ${FUND_AGENT_ENABLE_LLM:false}
     stage-max-iterations: ${FUND_AGENT_STAGE_MAX_ITERATIONS:3}
     final-max-iterations: ${FUND_AGENT_FINAL_MAX_ITERATIONS:6}

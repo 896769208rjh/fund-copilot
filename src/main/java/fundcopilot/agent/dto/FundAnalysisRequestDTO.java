@@ -1,5 +1,6 @@
 package fundcopilot.agent.dto;
 
+import fundcopilot.agent.model.AgentThinkingMode;
 import jakarta.validation.constraints.NotBlank;
 
 public record FundAnalysisRequestDTO(
@@ -7,6 +8,17 @@ public record FundAnalysisRequestDTO(
         String fundCode,
         String question,
         Boolean includeHistory,
-        Boolean includeRiskNotice
+        Boolean includeRiskNotice,
+        AgentThinkingMode thinkingMode
 ) {
+    public FundAnalysisRequestDTO(String fundCode,
+                                  String question,
+                                  Boolean includeHistory,
+                                  Boolean includeRiskNotice) {
+        this(fundCode, question, includeHistory, includeRiskNotice, AgentThinkingMode.defaultMode());
+    }
+
+    public AgentThinkingMode normalizedThinkingMode() {
+        return AgentThinkingMode.fromNullable(thinkingMode);
+    }
 }

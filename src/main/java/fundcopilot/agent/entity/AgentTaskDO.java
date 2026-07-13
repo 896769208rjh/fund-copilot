@@ -15,6 +15,7 @@ public class AgentTaskDO {
     private String taskNo;
     private String fundCode;
     private String question;
+    private String thinkingMode;
     private String requestKey;
     private String status;
     private Boolean restricted;
@@ -46,6 +47,8 @@ public class AgentTaskDO {
     public void setFundCode(String fundCode) { this.fundCode = fundCode; }
     public String getQuestion() { return question; }
     public void setQuestion(String question) { this.question = question; }
+    public String getThinkingMode() { return thinkingMode; }
+    public void setThinkingMode(String thinkingMode) { this.thinkingMode = thinkingMode; }
     public String getRequestKey() { return requestKey; }
     public void setRequestKey(String requestKey) { this.requestKey = requestKey; }
     public String getStatus() { return status; }

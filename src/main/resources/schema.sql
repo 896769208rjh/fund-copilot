@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS agent_task (
     task_no VARCHAR(64) NOT NULL,
     fund_code VARCHAR(16) NOT NULL,
     question VARCHAR(1024),
+    thinking_mode VARCHAR(32) NOT NULL DEFAULT 'BALANCED',
     request_key VARCHAR(64),
     status VARCHAR(32) NOT NULL,
     restricted BOOLEAN NOT NULL DEFAULT FALSE,

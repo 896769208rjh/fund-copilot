@@ -1,5 +1,6 @@
 package fundcopilot.agent.vo;
 
+import fundcopilot.agent.model.AgentThinkingMode;
 import fundcopilot.fund.vo.FundAnalysisResultVO;
 
 import java.time.LocalDateTime;
@@ -10,6 +11,7 @@ public record FundAgentTaskVO(
         String taskNo,
         String fundCode,
         String question,
+        AgentThinkingMode thinkingMode,
         String status,
         Boolean restricted,
         String finalAnswer,

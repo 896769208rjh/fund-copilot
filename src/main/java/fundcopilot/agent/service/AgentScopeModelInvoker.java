@@ -1,15 +1,16 @@
 package fundcopilot.agent.service;
 
 import fundcopilot.agent.AgentProperties;
+import fundcopilot.agent.model.AgentThinkingMode;
 import fundcopilot.agent.tool.FundAnalysisTools;
 import fundcopilot.fund.constant.FundConstants;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.OpenAIChatModel;
 import io.agentscope.core.tool.Toolkit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -32,41 +33,49 @@ public class AgentScopeModelInvoker {
 
     private final AgentProperties agentProperties;
     private final FundAnalysisTools fundAnalysisTools;
-    private final String dashScopeApiKey;
 
     public AgentScopeModelInvoker(AgentProperties agentProperties,
-                                  FundAnalysisTools fundAnalysisTools,
-                                  @Value("${fund-copilot.agent.api-key:}") String dashScopeApiKey) {
+                                  FundAnalysisTools fundAnalysisTools) {
         this.agentProperties = agentProperties;
         this.fundAnalysisTools = fundAnalysisTools;
-        this.dashScopeApiKey = dashScopeApiKey;
     }
 
     public boolean isEnabled() {
-        return agentProperties.isEnableLlm() && dashScopeApiKey != null && !dashScopeApiKey.isBlank();
+        return agentProperties.isEnableLlm()
+                && agentProperties.getBaseUrl() != null
+                && !agentProperties.getBaseUrl().isBlank()
+                && agentProperties.getApiKey() != null
+                && !agentProperties.getApiKey().isBlank();
     }
 
-    public String analysisMode() {
-        return isEnabled() ? "AgentScope LLM 分析" : "本地确定性分析";
+    public String analysisMode(AgentThinkingMode thinkingMode) {
+        AgentThinkingMode normalizedMode = AgentThinkingMode.fromNullable(thinkingMode);
+        return isEnabled()
+                ? "AgentScope " + agentProperties.getModelName() + "（" + normalizedMode.getDisplayName() + "）"
+                : "本地确定性分析";
     }
 
-    public String generateNarrative(String agentName, String instruction, String context, String fallback) {
+    public String generateNarrative(String agentName,
+                                    String instruction,
+                                    String context,
+                                    String fallback,
+                                    AgentThinkingMode thinkingMode) {
         if (!isEnabled()) {
             return fallback;
         }
         String prompt = instruction + "\n\n输入数据：\n" + context;
         return invoke(agentName, STAGE_SYSTEM_PROMPT, prompt, new Toolkit(),
-                agentProperties.getStageMaxIterations(), fallback);
+                agentProperties.getStageMaxIterations(), fallback, thinkingMode);
     }
 
-    public String generateFinalAnswer(String prompt, String fallback) {
+    public String generateFinalAnswer(String prompt, String fallback, AgentThinkingMode thinkingMode) {
         if (!isEnabled()) {
             return fallback;
         }
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(fundAnalysisTools);
         return invoke(FundConstants.AGENT_NAME_FUND_ANALYSIS, FINAL_SYSTEM_PROMPT, prompt, toolkit,
-                agentProperties.getFinalMaxIterations(), fallback);
+                agentProperties.getFinalMaxIterations(), fallback, thinkingMode);
     }
 
     private String invoke(String agentName,
@@ -74,14 +83,20 @@ public class AgentScopeModelInvoker {
                           String prompt,
                           Toolkit toolkit,
                           int maxIterations,
-                          String fallback) {
+                          String fallback,
+                          AgentThinkingMode thinkingMode) {
         try {
+            AgentThinkingMode normalizedMode = AgentThinkingMode.fromNullable(thinkingMode);
             ReActAgent agent = ReActAgent.builder()
                     .name(agentName)
                     .sysPrompt(systemPrompt)
-                    .model(DashScopeChatModel.builder()
-                            .apiKey(dashScopeApiKey)
+                    .model(OpenAIChatModel.builder()
+                            .apiKey(agentProperties.getApiKey())
+                            .baseUrl(agentProperties.getBaseUrl())
                             .modelName(agentProperties.getModelName())
+                            .generateOptions(GenerateOptions.builder()
+                                    .reasoningEffort(normalizedMode.getReasoningEffort())
+                                    .build())
                             .build())
                     .toolkit(toolkit)
                     .maxIters(maxIterations)

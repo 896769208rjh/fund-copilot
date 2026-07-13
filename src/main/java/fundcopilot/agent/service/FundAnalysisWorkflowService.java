@@ -18,6 +18,7 @@ import fundcopilot.agent.mapper.AgentReportSectionMapper;
 import fundcopilot.agent.mapper.AgentRunLogMapper;
 import fundcopilot.agent.mapper.AgentTaskMapper;
 import fundcopilot.agent.mapper.AgentTaskStageMapper;
+import fundcopilot.agent.model.AgentThinkingMode;
 import fundcopilot.agent.vo.AgentStreamEventVO;
 import fundcopilot.agent.vo.FundAgentReportSectionVO;
 import fundcopilot.agent.vo.FundAgentStageVO;
@@ -110,17 +111,21 @@ public class FundAnalysisWorkflowService {
         if (activeTask != null) {
             return toTaskVO(activeTask, true);
         }
-        return initializeNewTask(fundCode, question, requestKey);
+        return initializeNewTask(fundCode, question, requestKey, requestDTO.normalizedThinkingMode());
     }
 
     private FundAgentTaskVO initializeNewTask(FundAnalysisRequestDTO requestDTO) {
         String fundCode = requestDTO.fundCode().trim();
         String question = normalizeQuestion(requestDTO.question());
-        return initializeNewTask(fundCode, question, buildRequestKey(requestDTO, fundCode, question));
+        return initializeNewTask(fundCode, question, buildRequestKey(requestDTO, fundCode, question),
+                requestDTO.normalizedThinkingMode());
     }
 
-    private FundAgentTaskVO initializeNewTask(String fundCode, String question, String requestKey) {
-        AgentTaskDO taskDO = createTaskDO(fundCode, question, requestKey);
+    private FundAgentTaskVO initializeNewTask(String fundCode,
+                                              String question,
+                                              String requestKey,
+                                              AgentThinkingMode thinkingMode) {
+        AgentTaskDO taskDO = createTaskDO(fundCode, question, requestKey, thinkingMode);
         agentTaskMapper.insert(taskDO);
         persistTaskSnapshot(taskDO, createInitialState(taskDO));
         return buildTaskVO(taskDO, List.of(), List.of(), null);
@@ -475,7 +480,13 @@ public class FundAnalysisWorkflowService {
     }
 
     private FundAgentState createInitialState(AgentTaskDO taskDO) {
-        FundAgentState state = new FundAgentState(taskDO.getId(), taskDO.getTaskNo(), taskDO.getFundCode(), taskDO.getQuestion());
+        FundAgentState state = new FundAgentState(
+                taskDO.getId(),
+                taskDO.getTaskNo(),
+                taskDO.getFundCode(),
+                taskDO.getQuestion(),
+                AgentThinkingMode.fromValue(taskDO.getThinkingMode())
+        );
         state.setPastContext(loadMemoryContext(taskDO.getFundCode()));
         return state;
     }
@@ -635,6 +646,7 @@ public class FundAnalysisWorkflowService {
         input.put("stageCode", stage.stageCode());
         input.put("fundCode", state.getFundCode());
         input.put("question", state.getQuestion());
+        input.put("thinkingMode", state.getThinkingMode());
         input.put("dataQuality", state.getDataQuality());
         input.put("pastContextAvailable", state.getPastContext() != null && !state.getPastContext().isBlank());
         input.put("completedSections", state.getSections().stream().map(FundAgentReportSectionVO::title).toList());
@@ -659,12 +671,16 @@ public class FundAnalysisWorkflowService {
         }
     }
 
-    private AgentTaskDO createTaskDO(String fundCode, String question, String requestKey) {
+    private AgentTaskDO createTaskDO(String fundCode,
+                                     String question,
+                                     String requestKey,
+                                     AgentThinkingMode thinkingMode) {
         LocalDateTime now = LocalDateTime.now();
         AgentTaskDO taskDO = new AgentTaskDO();
         taskDO.setTaskNo("FA-" + TASK_NO_TIME_FORMATTER.format(now) + "-" + UUID.randomUUID().toString().substring(0, 8));
         taskDO.setFundCode(fundCode);
         taskDO.setQuestion(question);
+        taskDO.setThinkingMode(AgentThinkingMode.fromNullable(thinkingMode).name());
         taskDO.setRequestKey(requestKey);
         taskDO.setStatus(FundConstants.AGENT_TASK_STATUS_PENDING);
         taskDO.setRestricted(Boolean.FALSE);
@@ -762,6 +778,7 @@ public class FundAnalysisWorkflowService {
                 taskDO.getTaskNo(),
                 taskDO.getFundCode(),
                 taskDO.getQuestion(),
+                AgentThinkingMode.fromValue(taskDO.getThinkingMode()),
                 taskDO.getStatus(),
                 taskDO.getRestricted(),
                 taskDO.getFinalAnswer(),
@@ -939,6 +956,9 @@ public class FundAnalysisWorkflowService {
         builder.append("- 基金：").append(analysis.detail().fundName())
                 .append("（").append(taskDO.getFundCode()).append("）\n");
         builder.append("- 问题：").append(Objects.toString(taskDO.getQuestion(), "暂无")).append('\n');
+        builder.append("- 思考模式：")
+                .append(AgentThinkingMode.fromValue(taskDO.getThinkingMode()).getDisplayName())
+                .append('\n');
         builder.append("- 状态：").append(taskDO.getStatus()).append('\n');
         builder.append("- 重试次数：").append(Objects.requireNonNullElse(taskDO.getRetryCount(), 0)).append('\n');
         builder.append("- 数据来源：").append(analysis.dataSource()).append('\n');
@@ -988,7 +1008,8 @@ public class FundAnalysisWorkflowService {
     private String buildRequestKey(FundAnalysisRequestDTO requestDTO, String fundCode, String question) {
         String source = fundCode + "|" + question + "|"
                 + Boolean.TRUE.equals(requestDTO.includeHistory()) + "|"
-                + Boolean.TRUE.equals(requestDTO.includeRiskNotice());
+                + Boolean.TRUE.equals(requestDTO.includeRiskNotice()) + "|"
+                + requestDTO.normalizedThinkingMode().name();
         return DigestUtils.md5DigestAsHex(source.getBytes(StandardCharsets.UTF_8));
     }
 

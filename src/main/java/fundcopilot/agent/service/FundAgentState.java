@@ -1,5 +1,6 @@
 package fundcopilot.agent.service;
 
+import fundcopilot.agent.model.AgentThinkingMode;
 import fundcopilot.agent.vo.FundAgentReportSectionVO;
 import fundcopilot.agent.vo.FundAgentStageVO;
 import fundcopilot.compliance.ComplianceService.ComplianceResult;
@@ -15,6 +16,7 @@ public class FundAgentState {
     private final String taskNo;
     private final String fundCode;
     private final String question;
+    private final AgentThinkingMode thinkingMode;
     private FundAnalysisResultVO analysis;
     private ComplianceResult complianceResult;
     private String finalAnswer;
@@ -28,11 +30,16 @@ public class FundAgentState {
     private final List<FundAgentReportSectionVO> sections = new ArrayList<>();
     private final Map<String, Object> structuredReports = new LinkedHashMap<>();
 
-    public FundAgentState(Long taskId, String taskNo, String fundCode, String question) {
+    public FundAgentState(Long taskId,
+                          String taskNo,
+                          String fundCode,
+                          String question,
+                          AgentThinkingMode thinkingMode) {
         this.taskId = taskId;
         this.taskNo = taskNo;
         this.fundCode = fundCode;
         this.question = question;
+        this.thinkingMode = AgentThinkingMode.fromNullable(thinkingMode);
     }
 
     public Long getTaskId() {
@@ -49,6 +56,10 @@ public class FundAgentState {
 
     public String getQuestion() {
         return question;
+    }
+
+    public AgentThinkingMode getThinkingMode() {
+        return thinkingMode;
     }
 
     public FundAnalysisResultVO getAnalysis() {
@@ -166,6 +177,7 @@ public class FundAgentState {
                 taskNo,
                 fundCode,
                 question,
+                thinkingMode,
                 analysis,
                 complianceResult,
                 finalAnswer,
@@ -183,7 +195,8 @@ public class FundAgentState {
                 snapshot.taskId(),
                 snapshot.taskNo(),
                 snapshot.fundCode(),
-                snapshot.question()
+                snapshot.question(),
+                snapshot.thinkingMode()
         );
         state.setAnalysis(snapshot.analysis());
         state.setComplianceResult(snapshot.complianceResult());

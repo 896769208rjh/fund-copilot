@@ -16,7 +16,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest
+@SpringBootTest(properties = "fund-copilot.agent.enable-llm=false")
 class AgentTaskExecutionServiceTest {
     @Autowired
     private AgentTaskExecutionService agentTaskExecutionService;

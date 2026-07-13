@@ -1,0 +1,2 @@
+ALTER TABLE agent_task
+    ADD COLUMN thinking_mode VARCHAR(32) NOT NULL DEFAULT 'BALANCED';

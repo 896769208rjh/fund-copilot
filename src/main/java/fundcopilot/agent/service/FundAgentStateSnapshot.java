@@ -1,5 +1,6 @@
 package fundcopilot.agent.service;
 
+import fundcopilot.agent.model.AgentThinkingMode;
 import fundcopilot.compliance.ComplianceService.ComplianceResult;
 import fundcopilot.fund.vo.FundAnalysisResultVO;
 
@@ -11,6 +12,7 @@ public record FundAgentStateSnapshot(
         String taskNo,
         String fundCode,
         String question,
+        AgentThinkingMode thinkingMode,
         FundAnalysisResultVO analysis,
         ComplianceResult complianceResult,
         String finalAnswer,

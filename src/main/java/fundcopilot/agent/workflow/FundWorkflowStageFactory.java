@@ -87,8 +87,9 @@ public class FundWorkflowStageFactory {
                     analysisResultVO.dataSource(),
                     DATA_ROUTE,
                     dataQuality,
-                    analysisMode(),
+                    analysisMode(context),
                     buildAgentNarrative(
+                            context,
                             stageName(),
                             "请检查基金数据来源、样本数量和数据质量，输出一段简短审计意见。",
                             "基金：" + analysisResultVO.detail().fundName()
@@ -133,8 +134,9 @@ public class FundWorkflowStageFactory {
                     formatPercent(metrics.sixMonthReturn()),
                     formatPercent(metrics.oneYearReturn()),
                     Objects.toString(metrics.statisticDate(), "暂无"),
-                    analysisMode(),
+                    analysisMode(context),
                     buildAgentNarrative(
+                            context,
                             stageName(),
                             "请基于历史收益区间生成简短业绩解读，禁止给出买卖建议。",
                             "近1月：" + formatPercent(metrics.oneMonthReturn())
@@ -172,8 +174,9 @@ public class FundWorkflowStageFactory {
                     formatPercent(metrics.maxDrawdown()),
                     formatPercent(metrics.volatility()),
                     context.getState().getAnalysis().risks(),
-                    analysisMode(),
+                    analysisMode(context),
                     buildAgentNarrative(
+                            context,
                             stageName(),
                             "请基于风险等级、最大回撤和波动率生成简短风险解读，禁止预测未来收益。",
                             "风险等级：" + Objects.toString(context.getState().getAnalysis().detail().riskLevel(), "暂无")
@@ -218,8 +221,9 @@ public class FundWorkflowStageFactory {
                     "支付宝基金池演示列表",
                     peers,
                     "横向比较只用于识别差异，不输出排名、买入或卖出建议。",
-                    analysisMode(),
+                    analysisMode(context),
                     buildAgentNarrative(
+                            context,
                             stageName(),
                             "请基于同池基金指标生成横向差异解读，不要输出排名或购买建议。",
                             String.join("\n", peers),
@@ -269,8 +273,9 @@ public class FundWorkflowStageFactory {
                     positiveFactors,
                     riskFactors,
                     conclusion,
-                    analysisMode(),
+                    analysisMode(context),
                     buildAgentNarrative(
+                            context,
                             stageName(),
                             "请围绕优势因素和风险因素做平衡讨论，不要转化为买卖动作。",
                             "优势因素：\n- " + String.join("\n- ", positiveFactors)
@@ -431,7 +436,11 @@ public class FundWorkflowStageFactory {
                 + "\n合规检查：" + context.getState().getComplianceResult().message()
                 + "\n历史记忆：\n" + Objects.toString(context.getState().getPastContext(), "暂无")
                 + "\n工作流报告：\n" + renderSections(context);
-        return agentScopeModelInvoker.generateFinalAnswer(prompt, fallback);
+        return agentScopeModelInvoker.generateFinalAnswer(
+                prompt,
+                fallback,
+                context.getState().getThinkingMode()
+        );
     }
 
     private String renderSections(FundWorkflowContext context) {
@@ -506,12 +515,22 @@ public class FundWorkflowStageFactory {
                 + "\n\n" + report.answer();
     }
 
-    private String analysisMode() {
-        return agentScopeModelInvoker.analysisMode();
+    private String analysisMode(FundWorkflowContext context) {
+        return agentScopeModelInvoker.analysisMode(context.getState().getThinkingMode());
     }
 
-    private String buildAgentNarrative(String agentName, String instruction, String context, String fallback) {
-        return agentScopeModelInvoker.generateNarrative(agentName, instruction, context, fallback);
+    private String buildAgentNarrative(FundWorkflowContext workflowContext,
+                                       String agentName,
+                                       String instruction,
+                                       String context,
+                                       String fallback) {
+        return agentScopeModelInvoker.generateNarrative(
+                agentName,
+                instruction,
+                context,
+                fallback,
+                workflowContext.getState().getThinkingMode()
+        );
     }
 
     private boolean isPositive(BigDecimal value) {

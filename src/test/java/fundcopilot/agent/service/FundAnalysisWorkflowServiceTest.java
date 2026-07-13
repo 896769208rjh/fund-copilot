@@ -8,6 +8,7 @@ import fundcopilot.agent.entity.AgentTaskStageDO;
 import fundcopilot.agent.mapper.AgentReportSectionMapper;
 import fundcopilot.agent.mapper.AgentTaskMapper;
 import fundcopilot.agent.mapper.AgentTaskStageMapper;
+import fundcopilot.agent.model.AgentThinkingMode;
 import fundcopilot.agent.vo.AgentStreamEventVO;
 import fundcopilot.agent.vo.FundAgentTaskVO;
 import fundcopilot.fund.constant.FundConstants;
@@ -20,7 +21,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest
+@SpringBootTest(properties = "fund-copilot.agent.enable-llm=false")
 class FundAnalysisWorkflowServiceTest {
     @Autowired
     private FundAnalysisWorkflowService fundAnalysisWorkflowService;
@@ -205,6 +206,49 @@ class FundAnalysisWorkflowServiceTest {
         assertThat(secondTask.taskId()).isEqualTo(firstTask.taskId());
         assertThat(secondTask.status()).isEqualTo(FundConstants.AGENT_TASK_STATUS_PENDING);
         fundAnalysisWorkflowService.cancelTask(firstTask.taskId());
+    }
+
+    @Test
+    void createTaskShouldPersistSelectedThinkingMode() {
+        FundAnalysisRequestDTO requestDTO = new FundAnalysisRequestDTO(
+                "000001",
+                "验证仔细思考模式",
+                Boolean.TRUE,
+                Boolean.TRUE,
+                AgentThinkingMode.DEEP
+        );
+
+        FundAgentTaskVO taskVO = fundAnalysisWorkflowService.createTask(requestDTO);
+        AgentTaskDO taskDO = agentTaskMapper.selectById(taskVO.taskId());
+
+        assertThat(taskVO.thinkingMode()).isEqualTo(AgentThinkingMode.DEEP);
+        assertThat(taskDO.getThinkingMode()).isEqualTo(AgentThinkingMode.DEEP.name());
+        assertThat(taskDO.getStateSnapshot()).contains("\"thinkingMode\":\"DEEP\"");
+    }
+
+    @Test
+    void initializeTaskShouldNotReuseDifferentThinkingModes() {
+        FundAnalysisRequestDTO fastRequest = new FundAnalysisRequestDTO(
+                "000001",
+                "验证思考模式幂等键",
+                Boolean.TRUE,
+                Boolean.TRUE,
+                AgentThinkingMode.FAST
+        );
+        FundAnalysisRequestDTO deepRequest = new FundAnalysisRequestDTO(
+                "000001",
+                "验证思考模式幂等键",
+                Boolean.TRUE,
+                Boolean.TRUE,
+                AgentThinkingMode.DEEP
+        );
+
+        FundAgentTaskVO fastTask = fundAnalysisWorkflowService.initializeTask(fastRequest);
+        FundAgentTaskVO deepTask = fundAnalysisWorkflowService.initializeTask(deepRequest);
+
+        assertThat(deepTask.taskId()).isNotEqualTo(fastTask.taskId());
+        fundAnalysisWorkflowService.cancelTask(fastTask.taskId());
+        fundAnalysisWorkflowService.cancelTask(deepTask.taskId());
     }
 
     @Test
