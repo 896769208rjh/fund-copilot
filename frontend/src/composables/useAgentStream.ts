@@ -19,6 +19,52 @@ export async function streamFundAnalysis(
     throw new Error(`SSE request failed: ${response.status}`)
   }
 
+  await readEventStream(response, onEvent)
+}
+
+export async function streamAnalysisTask(
+  taskId: number,
+  onEvent: (event: AgentStreamEvent) => void,
+): Promise<void> {
+  const response = await fetch(`/api/agents/fund-analysis/tasks/${taskId}/stream`, {
+    headers: {
+      Accept: 'text/event-stream',
+    },
+  })
+
+  if (!response.ok || response.body === null) {
+    throw new Error(`SSE request failed: ${response.status}`)
+  }
+
+  await readEventStream(response, onEvent)
+}
+
+export async function streamResumeAnalysisTask(
+  taskId: number,
+  onEvent: (event: AgentStreamEvent) => void,
+): Promise<void> {
+  const response = await fetch(`/api/agents/fund-analysis/tasks/${taskId}/resume/stream`, {
+    method: 'POST',
+    headers: {
+      Accept: 'text/event-stream',
+    },
+  })
+
+  if (!response.ok || response.body === null) {
+    throw new Error(`SSE request failed: ${response.status}`)
+  }
+
+  await readEventStream(response, onEvent)
+}
+
+async function readEventStream(
+  response: Response,
+  onEvent: (event: AgentStreamEvent) => void,
+): Promise<void> {
+  if (response.body === null) {
+    throw new Error('SSE response body is empty')
+  }
+
   const reader = response.body.getReader()
   const decoder = new TextDecoder('utf-8')
   let buffer = ''

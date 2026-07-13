@@ -56,6 +56,25 @@ export interface FundAnalysisResult {
   generatedAt: string
 }
 
+export interface FundCompareColumn {
+  fundCode: string
+  fundName: string
+  fundType: string | null
+  riskLevel: string | null
+}
+
+export interface FundCompareRow {
+  dimension: string
+  values: string[]
+}
+
+export interface FundCompareResult {
+  columns: FundCompareColumn[]
+  rows: FundCompareRow[]
+  summary: string
+  generatedAt: string
+}
+
 export interface AgentStep {
   name: string
   status: string
@@ -73,13 +92,75 @@ export interface AgentAnalysisResponse {
   agentName: string
   fundCode: string
   answer: string
-  analysis: FundAnalysisResult
+  analysis: FundAnalysisResult | null
   steps: AgentStep[]
   disclaimer: string
   generatedAt: string
 }
 
-export type AgentStreamEventType = 'PROGRESS' | 'AGENT_STEP' | 'CARD' | 'TOKEN' | 'DONE'
+export interface FundAgentStage {
+  id: number
+  stageCode: string
+  stageName: string
+  status: string
+  summary: string | null
+  sortOrder: number
+  startedAt: string | null
+  completedAt: string | null
+  elapsedMs: number | null
+  errorMessage: string | null
+  stageInput: string | null
+  stageOutput: string | null
+}
+
+export interface FundAgentReportSection {
+  id: number
+  stageCode: string
+  sectionType: string
+  title: string
+  content: string
+  sortOrder: number
+  createdAt: string | null
+}
+
+export interface FundAgentTask {
+  taskId: number
+  taskNo: string
+  fundCode: string
+  question: string
+  status: string
+  restricted: boolean
+  finalAnswer: string | null
+  disclaimer: string | null
+  errorMessage: string | null
+  nextStageCode: string | null
+  retryCount: number | null
+  deadlineAt: string | null
+  reportMarkdown: string | null
+  analysis: FundAnalysisResult | null
+  stages: FundAgentStage[]
+  sections: FundAgentReportSection[]
+  startedAt: string | null
+  completedAt: string | null
+  elapsedMs: number | null
+  createdAt: string | null
+}
+
+export type AgentStreamEventType =
+  | 'PROGRESS'
+  | 'AGENT_STEP'
+  | 'CARD'
+  | 'TOKEN'
+  | 'DONE'
+  | 'TASK_CREATED'
+  | 'STAGE_STARTED'
+  | 'STAGE_DONE'
+  | 'SECTION'
+  | 'COMPLIANCE_BLOCKED'
+  | 'TASK_CANCELLED'
+  | 'TASK_TIMEOUT'
+  | 'TASK_RERUN_STARTED'
+  | 'ERROR'
 
 export interface AgentStreamEvent<T = unknown> {
   type: AgentStreamEventType
