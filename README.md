@@ -1,5 +1,7 @@
 # Fund Copilot
 
+**中文** | [English](README_EN.md)
+
 Fund Copilot 是一个面向基金业务场景的智能客服与基金分析工作台。当前版本已从 V1 单 Agent 演示升级为 V2 雏形：支持基金搜索、基金详情、东方财富公开数据同步、指标分析、AgentScope 基金分析、任务式 Agent 工作流、阶段报告持久化、SSE 过程展示和 Vue 3 + TypeScript 前端展示。
 
 ## 项目定位
