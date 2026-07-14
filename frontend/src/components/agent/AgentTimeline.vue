@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { Cpu } from '@element-plus/icons-vue'
-import type { AgentStep } from '../../types/fund'
+import type { AgentStageStatus, AgentStep } from '@/types'
 
 defineProps<{
   steps: AgentStep[]
   progressMessages: string[]
 }>()
 
-function stepType(status: string): 'success' | 'warning' | 'danger' | 'primary' {
+function stepType(status: AgentStageStatus): 'success' | 'warning' | 'danger' | 'primary' {
   if (status === 'SUCCESS') {
     return 'success'
   }
@@ -34,7 +34,9 @@ function stepType(status: string): 'success' | 'warning' | 'danger' | 'primary' 
       <span>执行过程</span>
     </div>
     <div v-if="progressMessages.length > 0" class="progress-messages">
-      <span v-for="message in progressMessages" :key="message">{{ message }}</span>
+      <span v-for="(message, index) in progressMessages" :key="`${index}-${message}`">{{
+        message
+      }}</span>
     </div>
     <el-timeline v-if="steps.length > 0">
       <el-timeline-item

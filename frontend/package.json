@@ -5,8 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "lint": "eslint . --max-warnings=0",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "type-check": "vue-tsc --noEmit",
     "build": "npm run type-check && vite build",
+    "check": "npm run lint && npm run build && npm run format:check",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -16,8 +21,17 @@
     "vue": "^3.5.39"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@typescript-eslint/parser": "8.55.0",
+    "@types/node": "^20.17.0",
     "@vitejs/plugin-vue": "^5.2.4",
+    "eslint": "^9.39.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-vue": "10.8.0",
+    "globals": "^16.3.0",
+    "prettier": "^3.9.0",
     "typescript": "^5.8.3",
+    "typescript-eslint": "8.55.0",
     "vue-tsc": "^2.2.12",
     "vite": "^5.4.21"
   }

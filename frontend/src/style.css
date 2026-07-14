@@ -17,8 +17,14 @@
   color: var(--color-text);
   background: var(--color-page);
   font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    "Microsoft YaHei", sans-serif;
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    'Microsoft YaHei',
+    sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -267,8 +273,8 @@ h3 {
 .pool-row {
   grid-template-columns: minmax(66px, auto) minmax(0, 1fr);
   grid-template-areas:
-    "code name"
-    "meta meta";
+    'code name'
+    'meta meta';
   gap: 4px 10px;
   min-height: 60px;
   padding: 11px 12px;
@@ -277,8 +283,8 @@ h3 {
 .pool-row {
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-areas:
-    "name code"
-    "meta meta";
+    'name code'
+    'meta meta';
 }
 
 .fund-row:hover,
@@ -381,7 +387,12 @@ h3 {
 .fund-hero {
   padding: 20px;
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.98) 58%, rgba(237, 247, 244, 0.92)),
+    linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.98),
+      rgba(248, 250, 252, 0.98) 58%,
+      rgba(237, 247, 244, 0.92)
+    ),
     var(--color-surface);
   border-left: 4px solid var(--color-accent);
 }
@@ -457,7 +468,7 @@ h3 {
   position: absolute;
   inset: 0 0 auto;
   height: 3px;
-  content: "";
+  content: '';
   background: #8aa0b5;
 }
 

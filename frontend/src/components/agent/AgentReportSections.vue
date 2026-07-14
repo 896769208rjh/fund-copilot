@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { TrendCharts } from '@element-plus/icons-vue'
-import type { FundAgentReportSection } from '../../types/fund'
+import type { FundAgentReportSection } from '@/types'
 
 defineProps<{
   sections: FundAgentReportSection[]
@@ -14,11 +14,7 @@ defineProps<{
       <span>结构化报告</span>
     </div>
     <div v-if="sections.length > 0" class="report-section-list">
-      <article
-        v-for="section in sections"
-        :key="section.id"
-        class="report-section"
-      >
+      <article v-for="section in sections" :key="section.id" class="report-section">
         <header>
           <strong>{{ section.title }}</strong>
           <el-tag size="small" type="info">{{ section.sectionType }}</el-tag>

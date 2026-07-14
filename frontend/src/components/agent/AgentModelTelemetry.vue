@@ -1,18 +1,20 @@
 <script setup lang="ts">
 import { Cpu } from '@element-plus/icons-vue'
 import { computed } from 'vue'
-import type { AgentModelCall } from '../../types/fund'
+import type { AgentModelCall, AgentModelCallStatus } from '@/types'
 
 const props = defineProps<{
   calls: AgentModelCall[]
 }>()
 
-const totalTokens = computed(() => props.calls.reduce(
-  (total, call) => total + (call.inputTokens ?? 0) + (call.outputTokens ?? 0),
-  0,
-))
+const totalTokens = computed(() =>
+  props.calls.reduce(
+    (total, call) => total + (call.inputTokens ?? 0) + (call.outputTokens ?? 0),
+    0,
+  ),
+)
 
-function callTone(status: string): string {
+function callTone(status: AgentModelCallStatus): 'success' | 'fallback' | 'failed' {
   if (status === 'SUCCESS') {
     return 'success'
   }
@@ -38,7 +40,10 @@ function callTone(status: string): string {
         </div>
         <div class="telemetry-values">
           <span :class="`tone-${callTone(call.status)}`">{{ call.status }}</span>
-          <small>{{ (call.inputTokens ?? 0) + (call.outputTokens ?? 0) }} Token · {{ call.elapsedMs }}ms</small>
+          <small
+            >{{ (call.inputTokens ?? 0) + (call.outputTokens ?? 0) }} Token ·
+            {{ call.elapsedMs }}ms</small
+          >
         </div>
       </div>
     </div>

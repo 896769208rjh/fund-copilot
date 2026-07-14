@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { DataLine, RefreshRight } from '@element-plus/icons-vue'
-import type { FundAgentStage } from '../../types/fund'
+import type { FundAgentStage } from '@/types'
 
 defineProps<{
   stages: FundAgentStage[]
@@ -19,11 +19,7 @@ const emit = defineEmits<{
       <span>阶段审计</span>
     </div>
     <div v-if="stages.length > 0" class="stage-audit-list">
-      <article
-        v-for="stage in stages"
-        :key="`${stage.stageCode}-audit`"
-        class="stage-audit-item"
-      >
+      <article v-for="stage in stages" :key="`${stage.stageCode}-audit`" class="stage-audit-item">
         <header>
           <strong>{{ stage.stageName }}</strong>
           <el-tooltip content="从此阶段重新执行" placement="top">

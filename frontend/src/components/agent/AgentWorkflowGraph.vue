@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import { Connection } from '@element-plus/icons-vue'
 import { computed } from 'vue'
-import type { FundAgentStage } from '../../types/fund'
+import type { AgentStageStatus, FundAgentStage } from '@/types'
 
 const props = defineProps<{
   stages: FundAgentStage[]
 }>()
 
-const stageStatusMap = computed(() => new Map(
-  props.stages.map((stage) => [stage.stageCode, stage.status]),
-))
+const stageStatusMap = computed(
+  () => new Map(props.stages.map((stage) => [stage.stageCode, stage.status])),
+)
 
 const graphRows = [
   [{ code: 'DATA_COLLECTION', name: '数据采集' }],
@@ -23,7 +23,7 @@ const graphRows = [
   [{ code: 'ANSWER_COMPOSER', name: '回答生成' }],
 ]
 
-function nodeStatus(stageCode: string): string {
+function nodeStatus(stageCode: string): AgentStageStatus {
   return stageStatusMap.value.get(stageCode) ?? 'PENDING'
 }
 </script>
@@ -47,7 +47,9 @@ function nodeStatus(stageCode: string): string {
             <small>{{ nodeStatus(node.code) }}</small>
           </div>
         </div>
-        <div v-if="rowIndex < graphRows.length - 1" class="workflow-connector" aria-hidden="true">↓</div>
+        <div v-if="rowIndex < graphRows.length - 1" class="workflow-connector" aria-hidden="true">
+          ↓
+        </div>
       </template>
     </div>
   </section>

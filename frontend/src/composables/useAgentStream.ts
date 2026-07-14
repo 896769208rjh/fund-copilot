@@ -1,57 +1,58 @@
-import type { AgentStreamEvent, FundAnalysisRequest } from '../types/fund'
+import type { AgentStreamEvent, FundAnalysisRequest } from '@/types'
 
 const STREAM_URL = '/api/agents/fund-analysis/stream'
 
 export async function streamFundAnalysis(
   requestBody: FundAnalysisRequest,
   onEvent: (event: AgentStreamEvent) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
-  const response = await fetch(STREAM_URL, {
+  await requestEventStream(STREAM_URL, onEvent, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
     },
     body: JSON.stringify(requestBody),
+    signal,
   })
-
-  if (!response.ok || response.body === null) {
-    throw new Error(`SSE request failed: ${response.status}`)
-  }
-
-  await readEventStream(response, onEvent)
 }
 
 export async function streamAnalysisTask(
   taskId: number,
   onEvent: (event: AgentStreamEvent) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
-  const response = await fetch(`/api/agents/fund-analysis/tasks/${taskId}/stream`, {
+  await requestEventStream(`/api/agents/fund-analysis/tasks/${taskId}/stream`, onEvent, {
     headers: {
       Accept: 'text/event-stream',
     },
+    signal,
   })
-
-  if (!response.ok || response.body === null) {
-    throw new Error(`SSE request failed: ${response.status}`)
-  }
-
-  await readEventStream(response, onEvent)
 }
 
 export async function streamResumeAnalysisTask(
   taskId: number,
   onEvent: (event: AgentStreamEvent) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
-  const response = await fetch(`/api/agents/fund-analysis/tasks/${taskId}/resume/stream`, {
+  await requestEventStream(`/api/agents/fund-analysis/tasks/${taskId}/resume/stream`, onEvent, {
     method: 'POST',
     headers: {
       Accept: 'text/event-stream',
     },
+    signal,
   })
+}
 
+async function requestEventStream(
+  url: string,
+  onEvent: (event: AgentStreamEvent) => void,
+  init?: RequestInit,
+): Promise<void> {
+  const response = await fetch(url, init)
   if (!response.ok || response.body === null) {
-    throw new Error(`SSE request failed: ${response.status}`)
+    throw new Error(`SSE 请求失败（HTTP ${response.status}）`)
   }
 
   await readEventStream(response, onEvent)
@@ -71,11 +72,19 @@ async function readEventStream(
 
   while (true) {
     const { value, done } = await reader.read()
-    buffer += decoder.decode(value, { stream: !done })
+    if (value !== undefined) {
+      buffer += decoder.decode(value, { stream: true })
+    }
+
+    if (done) {
+      buffer += decoder.decode()
+    }
 
     const chunks = buffer.split(/\r?\n\r?\n/)
     buffer = chunks.pop() ?? ''
-    chunks.forEach((chunk) => emitEvent(chunk, onEvent))
+    for (const chunk of chunks) {
+      emitEvent(chunk, onEvent)
+    }
 
     if (done) {
       break
@@ -88,15 +97,22 @@ async function readEventStream(
 }
 
 function emitEvent(chunk: string, onEvent: (event: AgentStreamEvent) => void): void {
+  const event = parseAgentStreamChunk(chunk)
+  if (event !== null) {
+    onEvent(event)
+  }
+}
+
+export function parseAgentStreamChunk(chunk: string): AgentStreamEvent | null {
   const dataLines = chunk
     .split(/\r?\n/)
     .filter((line) => line.startsWith('data:'))
     .map((line) => line.slice(5).trim())
 
   if (dataLines.length === 0) {
-    return
+    return null
   }
 
   const data = dataLines.join('\n')
-  onEvent(JSON.parse(data) as AgentStreamEvent)
+  return JSON.parse(data) as AgentStreamEvent
 }
