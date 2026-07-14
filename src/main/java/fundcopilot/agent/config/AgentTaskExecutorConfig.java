@@ -10,11 +10,14 @@ import java.util.concurrent.ThreadPoolExecutor;
 @Configuration
 public class AgentTaskExecutorConfig {
     public static final String FUND_AGENT_TASK_EXECUTOR = "fundAgentTaskExecutor";
+    public static final String FUND_AGENT_GRAPH_EXECUTOR = "fundAgentGraphExecutor";
 
     private static final int CORE_POOL_SIZE = 2;
     private static final int MAX_POOL_SIZE = 4;
     private static final int QUEUE_CAPACITY = 100;
     private static final int AWAIT_TERMINATION_SECONDS = 30;
+    private static final int GRAPH_POOL_SIZE = 3;
+    private static final int GRAPH_QUEUE_CAPACITY = 24;
 
     @Bean(name = FUND_AGENT_TASK_EXECUTOR, defaultCandidate = false)
     public Executor fundAgentTaskExecutor() {
@@ -26,6 +29,20 @@ public class AgentTaskExecutorConfig {
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(AWAIT_TERMINATION_SECONDS);
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+        executor.initialize();
+        return executor;
+    }
+
+    @Bean(name = FUND_AGENT_GRAPH_EXECUTOR, defaultCandidate = false)
+    public Executor fundAgentGraphExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(GRAPH_POOL_SIZE);
+        executor.setMaxPoolSize(GRAPH_POOL_SIZE);
+        executor.setQueueCapacity(GRAPH_QUEUE_CAPACITY);
+        executor.setThreadNamePrefix("fund-graph-");
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(AWAIT_TERMINATION_SECONDS);
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
         executor.initialize();
         return executor;
     }

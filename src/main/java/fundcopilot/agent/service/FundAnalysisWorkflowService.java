@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import fundcopilot.agent.AgentProperties;
+import fundcopilot.agent.config.AgentTaskExecutorConfig;
 import fundcopilot.agent.dto.FundAnalysisRequestDTO;
 import fundcopilot.agent.entity.AgentMemoryEntryDO;
 import fundcopilot.agent.entity.AgentReportSectionDO;
@@ -36,6 +37,7 @@ import fundcopilot.fund.vo.FundAnalysisResultVO;
 import fundcopilot.fund.vo.FundMetricVO;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.util.DigestUtils;
 
@@ -45,11 +47,15 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.function.Consumer;
 
 @Service
@@ -71,6 +77,7 @@ public class FundAnalysisWorkflowService {
     private final ObjectMapper objectMapper;
     private final AgentProperties agentProperties;
     private final FundWorkflowGraph workflowGraph;
+    private final Executor graphExecutor;
 
     public FundAnalysisWorkflowService(FundQueryService fundQueryService,
                                        ComplianceService complianceService,
@@ -81,7 +88,8 @@ public class FundAnalysisWorkflowService {
                                        AgentRunLogMapper agentRunLogMapper,
                                        ObjectMapper objectMapper,
                                        AgentProperties agentProperties,
-                                       FundWorkflowStageFactory fundWorkflowStageFactory) {
+                                       FundWorkflowStageFactory fundWorkflowStageFactory,
+                                       @Qualifier(AgentTaskExecutorConfig.FUND_AGENT_GRAPH_EXECUTOR) Executor graphExecutor) {
         this.fundQueryService = fundQueryService;
         this.complianceService = complianceService;
         this.agentTaskMapper = agentTaskMapper;
@@ -92,6 +100,7 @@ public class FundAnalysisWorkflowService {
         this.objectMapper = objectMapper;
         this.agentProperties = agentProperties;
         this.workflowGraph = fundWorkflowStageFactory.createGraph();
+        this.graphExecutor = graphExecutor;
     }
 
     public FundAgentTaskVO createTask(FundAnalysisRequestDTO requestDTO) {
@@ -251,13 +260,9 @@ public class FundAnalysisWorkflowService {
         if (isActiveStatus(taskDO.getStatus())) {
             throw new IllegalStateException("运行中的任务不能发起阶段重跑，请先取消任务");
         }
-        FundWorkflowStage targetStage = workflowGraph.findStage(stageCode)
+        workflowGraph.findStage(stageCode)
                 .orElseThrow(() -> new IllegalArgumentException("未知工作流阶段: " + stageCode));
-        List<String> rerunStageCodes = workflowGraph.orderedStages()
-                .stream()
-                .filter(stage -> stage.sortOrder() >= targetStage.sortOrder())
-                .map(FundWorkflowStage::stageCode)
-                .toList();
+        List<String> rerunStageCodes = workflowGraph.rerunStageCodes(stageCode);
         agentTaskStageMapper.delete(new LambdaQueryWrapper<AgentTaskStageDO>()
                 .eq(AgentTaskStageDO::getTaskId, taskId)
                 .in(AgentTaskStageDO::getStageCode, rerunStageCodes));
@@ -365,29 +370,29 @@ public class FundAnalysisWorkflowService {
                                             boolean skipSuccessfulStages,
                                             Consumer<AgentStreamEventVO> eventConsumer) {
         try {
-            FundWorkflowStage stage = resolveStartStage(taskDO, skipSuccessfulStages);
-            while (stage != null) {
+            Set<String> completedStageCodes = skipSuccessfulStages
+                    ? loadSuccessfulStageCodes(taskDO.getId())
+                    : new LinkedHashSet<>();
+            int waveNumber = 0;
+            while (!workflowGraph.isComplete(state, completedStageCodes)) {
                 ensureTaskCanContinue(taskDO);
-                taskDO.setNextStageCode(stage.stageCode());
-                taskDO.setUpdatedAt(LocalDateTime.now());
-                int updatedRows = agentTaskMapper.update(null, new LambdaUpdateWrapper<AgentTaskDO>()
-                        .eq(AgentTaskDO::getId, taskDO.getId())
-                        .eq(AgentTaskDO::getStatus, FundConstants.AGENT_TASK_STATUS_RUNNING)
-                        .set(AgentTaskDO::getNextStageCode, stage.stageCode())
-                        .set(AgentTaskDO::getUpdatedAt, taskDO.getUpdatedAt()));
-                if (updatedRows == 0) {
-                    ensureTaskCanContinue(taskDO);
-                    throw new IllegalStateException("任务状态已发生变化，无法开始下一阶段");
+                List<FundWorkflowStage> readyStages = workflowGraph.readyStages(state, completedStageCodes);
+                if (readyStages.isEmpty()) {
+                    Set<String> pendingStageCodes = new LinkedHashSet<>(workflowGraph.activeStageCodes(state));
+                    pendingStageCodes.removeAll(completedStageCodes);
+                    throw new IllegalStateException("状态图无法继续执行，未满足依赖的节点: " + pendingStageCodes);
                 }
 
-                runStage(taskDO, state, stage, eventConsumer);
+                waveNumber++;
+                updateNextStageCheckpoint(taskDO, readyStages.get(0).stageCode());
+                emit(eventConsumer, FundConstants.SSE_PROGRESS,
+                        buildGraphProgressMessage(waveNumber, readyStages));
+                runStageWave(taskDO, state, readyStages, eventConsumer);
+                recordInactiveStages(taskDO.getId(), state, eventConsumer);
+                readyStages.stream().map(FundWorkflowStage::stageCode).forEach(completedStageCodes::add);
                 ensureTaskCanContinue(taskDO);
-                stage = workflowGraph.nextStage(
-                                stage,
-                                state,
-                                skipSuccessfulStages ? this::isStageSuccess : (taskId, stageCode) -> false)
-                        .orElse(null);
-                taskDO.setNextStageCode(stage == null ? null : stage.stageCode());
+                List<FundWorkflowStage> nextReadyStages = workflowGraph.readyStages(state, completedStageCodes);
+                taskDO.setNextStageCode(nextReadyStages.isEmpty() ? null : nextReadyStages.get(0).stageCode());
                 persistTaskSnapshot(taskDO, state);
             }
 
@@ -419,6 +424,27 @@ public class FundAnalysisWorkflowService {
         }
     }
 
+    private String buildGraphProgressMessage(int waveNumber, List<FundWorkflowStage> readyStages) {
+        String executionMode = readyStages.size() > 1 ? "并行" : "串行";
+        String stageNames = readyStages.stream().map(FundWorkflowStage::stageName).reduce((left, right) -> left + "、" + right)
+                .orElse("暂无节点");
+        return "状态图第 " + waveNumber + " 批次（" + executionMode + "）：" + stageNames;
+    }
+
+    private void updateNextStageCheckpoint(AgentTaskDO taskDO, String stageCode) {
+        taskDO.setNextStageCode(stageCode);
+        taskDO.setUpdatedAt(LocalDateTime.now());
+        int updatedRows = agentTaskMapper.update(null, new LambdaUpdateWrapper<AgentTaskDO>()
+                .eq(AgentTaskDO::getId, taskDO.getId())
+                .eq(AgentTaskDO::getStatus, FundConstants.AGENT_TASK_STATUS_RUNNING)
+                .set(AgentTaskDO::getNextStageCode, stageCode)
+                .set(AgentTaskDO::getUpdatedAt, taskDO.getUpdatedAt()));
+        if (updatedRows == 0) {
+            ensureTaskCanContinue(taskDO);
+            throw new IllegalStateException("任务状态已发生变化，无法开始下一批状态图节点");
+        }
+    }
+
     private FundAgentTaskVO completeControlledTask(AgentTaskDO taskDO,
                                                     FundAgentState state,
                                                     long startNanoTime,
@@ -435,48 +461,163 @@ public class FundAnalysisWorkflowService {
         return taskVO;
     }
 
-    private void runStage(AgentTaskDO taskDO,
-                          FundAgentState state,
-                          FundWorkflowStage stage,
-                          Consumer<AgentStreamEventVO> eventConsumer) {
+    private void runStageWave(AgentTaskDO taskDO,
+                              FundAgentState state,
+                              List<FundWorkflowStage> readyStages,
+                              Consumer<AgentStreamEventVO> eventConsumer) {
+        List<PreparedStage> preparedStages = readyStages.stream()
+                .map(stage -> prepareStage(taskDO.getId(), state, stage, eventConsumer))
+                .toList();
+        List<StageExecution> executions;
+        if (preparedStages.size() == 1) {
+            executions = List.of(executePreparedStage(state, preparedStages.get(0)));
+        } else {
+            List<CompletableFuture<StageExecution>> futures = preparedStages.stream()
+                    .map(preparedStage -> CompletableFuture.supplyAsync(
+                            () -> executePreparedStage(state, preparedStage), graphExecutor))
+                    .toList();
+            executions = futures.stream().map(CompletableFuture::join).toList();
+        }
+
+        RuntimeException firstFailure = null;
+        for (StageExecution execution : executions) {
+            if (execution.error() == null) {
+                completeSuccessfulStage(state, execution, eventConsumer);
+            } else {
+                completeFailedStage(state, execution, eventConsumer);
+                if (firstFailure == null) {
+                    firstFailure = execution.error();
+                }
+            }
+        }
+        syncTaskFromState(taskDO, state);
+        if (firstFailure != null) {
+            throw firstFailure;
+        }
+    }
+
+    private PreparedStage prepareStage(Long taskId,
+                                       FundAgentState state,
+                                       FundWorkflowStage stage,
+                                       Consumer<AgentStreamEventVO> eventConsumer) {
         long startNanoTime = System.nanoTime();
-        AgentTaskStageDO stageDO = beginStage(taskDO.getId(), stage);
+        AgentTaskStageDO stageDO = beginStage(taskId, stage);
         stageDO.setStageInput(buildStageInput(stage, state));
         agentTaskStageMapper.updateById(stageDO);
-        deleteStageSections(taskDO.getId(), stage.stageCode());
+        deleteStageSections(taskId, stage.stageCode());
         state.removeSectionsByStage(stage.stageCode());
 
         FundAgentStageVO startedStageVO = toStageVO(stageDO);
         state.addStage(startedStageVO);
         emit(eventConsumer, FundConstants.SSE_STAGE_STARTED, startedStageVO);
         emit(eventConsumer, FundConstants.SSE_AGENT_STEP, toAgentStep(startedStageVO));
+        return new PreparedStage(stage, stageDO, startNanoTime);
+    }
 
+    private StageExecution executePreparedStage(FundAgentState state, PreparedStage preparedStage) {
         try {
-            FundStageResult result = stage.execute(new FundWorkflowContext(state));
-            validateStageResult(stage, result);
-            for (FundStageReport report : result.reports()) {
-                state.putStructuredReport(stage.stageCode(), report.structuredData());
-                addSection(state, eventConsumer, stage.stageCode(), report);
-            }
-            for (AgentStreamEventVO eventVO : result.events()) {
-                emit(eventConsumer, eventVO.type(), eventVO.payload());
-            }
-            syncTaskFromState(taskDO, state);
-            completeStage(stageDO, FundConstants.AGENT_STATUS_SUCCESS, result.summary(), elapsedMillis(startNanoTime), null,
-                    buildStageOutput(result));
-            FundAgentStageVO completedStageVO = toStageVO(stageDO);
-            state.addStage(completedStageVO);
-            emit(eventConsumer, FundConstants.SSE_STAGE_DONE, completedStageVO);
-            emit(eventConsumer, FundConstants.SSE_AGENT_STEP, toAgentStep(completedStageVO));
-        } catch (Exception exception) {
-            completeStage(stageDO, FundConstants.AGENT_STATUS_FAILED, "阶段执行失败", elapsedMillis(startNanoTime), exception.getMessage(),
-                    "ERROR: " + exception.getMessage());
-            FundAgentStageVO failedStageVO = toStageVO(stageDO);
-            state.addStage(failedStageVO);
-            emit(eventConsumer, FundConstants.SSE_STAGE_DONE, failedStageVO);
-            emit(eventConsumer, FundConstants.SSE_AGENT_STEP, toAgentStep(failedStageVO));
-            throw exception;
+            FundStageResult result = preparedStage.stage().execute(new FundWorkflowContext(state));
+            validateStageResult(preparedStage.stage(), result);
+            return new StageExecution(preparedStage, result, null);
+        } catch (RuntimeException exception) {
+            return new StageExecution(preparedStage, null, exception);
         }
+    }
+
+    private void completeSuccessfulStage(FundAgentState state,
+                                         StageExecution execution,
+                                         Consumer<AgentStreamEventVO> eventConsumer) {
+        FundWorkflowStage stage = execution.preparedStage().stage();
+        FundStageResult result = execution.result();
+        for (FundStageReport report : result.reports()) {
+            state.putStructuredReport(stage.stageCode(), report.structuredData());
+            addSection(state, eventConsumer, stage.stageCode(), report);
+        }
+        for (AgentStreamEventVO eventVO : result.events()) {
+            emit(eventConsumer, eventVO.type(), eventVO.payload());
+        }
+        AgentTaskStageDO stageDO = execution.preparedStage().stageDO();
+        completeStage(stageDO, FundConstants.AGENT_STATUS_SUCCESS, result.summary(),
+                elapsedMillis(execution.preparedStage().startNanoTime()), null, buildStageOutput(result));
+        FundAgentStageVO completedStageVO = toStageVO(stageDO);
+        state.addStage(completedStageVO);
+        emit(eventConsumer, FundConstants.SSE_STAGE_DONE, completedStageVO);
+        emit(eventConsumer, FundConstants.SSE_AGENT_STEP, toAgentStep(completedStageVO));
+    }
+
+    private void completeFailedStage(FundAgentState state,
+                                     StageExecution execution,
+                                     Consumer<AgentStreamEventVO> eventConsumer) {
+        AgentTaskStageDO stageDO = execution.preparedStage().stageDO();
+        RuntimeException exception = execution.error();
+        completeStage(stageDO, FundConstants.AGENT_STATUS_FAILED, "阶段执行失败",
+                elapsedMillis(execution.preparedStage().startNanoTime()), exception.getMessage(),
+                "ERROR: " + exception.getMessage());
+        FundAgentStageVO failedStageVO = toStageVO(stageDO);
+        state.addStage(failedStageVO);
+        emit(eventConsumer, FundConstants.SSE_STAGE_DONE, failedStageVO);
+        emit(eventConsumer, FundConstants.SSE_AGENT_STEP, toAgentStep(failedStageVO));
+    }
+
+    private void recordInactiveStages(Long taskId,
+                                      FundAgentState state,
+                                      Consumer<AgentStreamEventVO> eventConsumer) {
+        if (state.getAnalysis() == null) {
+            return;
+        }
+        for (FundWorkflowStage inactiveStage : workflowGraph.inactiveStages(state)) {
+            AgentTaskStageDO existingStage = agentTaskStageMapper.selectOne(
+                    new LambdaQueryWrapper<AgentTaskStageDO>()
+                            .eq(AgentTaskStageDO::getTaskId, taskId)
+                            .eq(AgentTaskStageDO::getStageCode, inactiveStage.stageCode()));
+            if (existingStage != null) {
+                continue;
+            }
+            LocalDateTime now = LocalDateTime.now();
+            AgentTaskStageDO skippedStage = new AgentTaskStageDO();
+            skippedStage.setTaskId(taskId);
+            skippedStage.setStageCode(inactiveStage.stageCode());
+            skippedStage.setStageName(inactiveStage.stageName());
+            skippedStage.setStatus(FundConstants.AGENT_STAGE_STATUS_SKIPPED);
+            skippedStage.setSummary("状态图条件不满足，已跳过该节点");
+            skippedStage.setSortOrder(inactiveStage.sortOrder());
+            skippedStage.setStartedAt(now);
+            skippedStage.setCompletedAt(now);
+            skippedStage.setElapsedMs(0L);
+            skippedStage.setStageInput(buildStageInput(inactiveStage, state));
+            skippedStage.setStageOutput("{\"skipped\":true}");
+            skippedStage.setCreatedAt(now);
+            skippedStage.setUpdatedAt(now);
+            agentTaskStageMapper.insert(skippedStage);
+            FundAgentStageVO skippedStageVO = toStageVO(skippedStage);
+            state.addStage(skippedStageVO);
+            emit(eventConsumer, FundConstants.SSE_STAGE_DONE, skippedStageVO);
+            emit(eventConsumer, FundConstants.SSE_AGENT_STEP, toAgentStep(skippedStageVO));
+        }
+    }
+
+    private Set<String> loadSuccessfulStageCodes(Long taskId) {
+        Set<String> successfulStageCodes = new LinkedHashSet<>();
+        agentTaskStageMapper.selectList(new LambdaQueryWrapper<AgentTaskStageDO>()
+                        .eq(AgentTaskStageDO::getTaskId, taskId)
+                        .eq(AgentTaskStageDO::getStatus, FundConstants.AGENT_STATUS_SUCCESS)
+                        .orderByAsc(AgentTaskStageDO::getSortOrder))
+                .forEach(stageDO -> successfulStageCodes.add(stageDO.getStageCode()));
+        return successfulStageCodes;
+    }
+
+    private record PreparedStage(
+            FundWorkflowStage stage,
+            AgentTaskStageDO stageDO,
+            long startNanoTime
+    ) {
+    }
+
+    private record StageExecution(
+            PreparedStage preparedStage,
+            FundStageResult result,
+            RuntimeException error
+    ) {
     }
 
     private FundAgentState createInitialState(AgentTaskDO taskDO) {
@@ -573,27 +714,6 @@ public class FundAnalysisWorkflowService {
         agentReportSectionMapper.delete(new LambdaQueryWrapper<AgentReportSectionDO>()
                 .eq(AgentReportSectionDO::getTaskId, taskId)
                 .eq(AgentReportSectionDO::getStageCode, stageCode));
-    }
-
-    private boolean isStageSuccess(Long taskId, String stageCode) {
-        AgentTaskStageDO stageDO = agentTaskStageMapper.selectOne(new LambdaQueryWrapper<AgentTaskStageDO>()
-                .eq(AgentTaskStageDO::getTaskId, taskId)
-                .eq(AgentTaskStageDO::getStageCode, stageCode));
-        return stageDO != null && FundConstants.AGENT_STATUS_SUCCESS.equals(stageDO.getStatus());
-    }
-
-    private FundWorkflowStage resolveStartStage(AgentTaskDO taskDO, boolean skipSuccessfulStages) {
-        FundWorkflowStage stage = taskDO.getNextStageCode() == null || taskDO.getNextStageCode().isBlank()
-                ? workflowGraph.startStage().orElseThrow(() -> new IllegalStateException("基金分析工作流缺少起始节点"))
-                : workflowGraph.findStage(taskDO.getNextStageCode())
-                .orElseThrow(() -> new IllegalArgumentException("未知恢复阶段: " + taskDO.getNextStageCode()));
-        while (skipSuccessfulStages && isStageSuccess(taskDO.getId(), stage.stageCode())) {
-            stage = workflowGraph.nextStage(stage, restoreState(taskDO), this::isStageSuccess).orElse(null);
-            if (stage == null) {
-                break;
-            }
-        }
-        return stage;
     }
 
     private FundAgentState restoreStateSnapshot(AgentTaskDO taskDO) {
@@ -998,6 +1118,13 @@ public class FundAnalysisWorkflowService {
         FundAgentState state = restoreStateSnapshot(taskDO);
         state.setFinalAnswer(null);
         rerunStageCodes.forEach(state.getStructuredReports()::remove);
+        if (rerunStageCodes.contains(FundConstants.AGENT_STAGE_FACTOR_DEBATE)) {
+            state.setPositiveFactors(List.of());
+            state.setRiskFactors(state.getAnalysis() == null ? List.of() : state.getAnalysis().risks());
+        }
+        if (rerunStageCodes.contains(FundConstants.AGENT_STAGE_COMPLIANCE_REVIEW)) {
+            state.setComplianceResult(null);
+        }
         try {
             return objectMapper.writeValueAsString(state.toSnapshot());
         } catch (JsonProcessingException exception) {

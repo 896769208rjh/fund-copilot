@@ -23,6 +23,10 @@ public final class FundStructuredReports {
             String threeMonthReturn,
             String sixMonthReturn,
             String oneYearReturn,
+            String annualizedReturn,
+            String downsideVolatility,
+            String returnDrawdownRatio,
+            String sampleBoundary,
             String statisticDate,
             String analysisMode,
             String agentNarrative

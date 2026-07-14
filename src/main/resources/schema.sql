@@ -68,6 +68,29 @@ CREATE TABLE IF NOT EXISTS agent_run_log (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS agent_model_call (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    task_id BIGINT NOT NULL,
+    stage_code VARCHAR(64) NOT NULL,
+    agent_name VARCHAR(128) NOT NULL,
+    model_name VARCHAR(128) NOT NULL,
+    thinking_mode VARCHAR(32) NOT NULL,
+    prompt_version VARCHAR(64) NOT NULL,
+    output_schema VARCHAR(128) NOT NULL,
+    attempt_no INT NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    input_tokens INT,
+    output_tokens INT,
+    input_chars INT NOT NULL DEFAULT 0,
+    output_chars INT NOT NULL DEFAULT 0,
+    elapsed_ms BIGINT NOT NULL DEFAULT 0,
+    fallback_reason VARCHAR(1024),
+    error_message VARCHAR(1024),
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_agent_model_call_task_stage (task_id, stage_code),
+    KEY idx_agent_model_call_created_at (created_at)
+);
+
 CREATE TABLE IF NOT EXISTS agent_task (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     task_no VARCHAR(64) NOT NULL,

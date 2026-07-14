@@ -1,11 +1,14 @@
 package fundcopilot.agent.workflow;
 
 import fundcopilot.agent.service.AgentScopeModelInvoker;
+import fundcopilot.agent.service.FundAgentState;
 import fundcopilot.agent.vo.AgentStreamEventVO;
 import fundcopilot.compliance.ComplianceService;
 import fundcopilot.compliance.ComplianceService.ComplianceResult;
 import fundcopilot.fund.constant.FundConstants;
+import fundcopilot.fund.service.FundAdvancedMetricCalculator;
 import fundcopilot.fund.service.FundQueryService;
+import fundcopilot.fund.vo.FundAdvancedMetricVO;
 import fundcopilot.fund.vo.FundAnalysisResultVO;
 import fundcopilot.fund.vo.FundMetricVO;
 import fundcopilot.fund.vo.FundSearchItemVO;
@@ -31,13 +34,16 @@ public class FundWorkflowStageFactory {
     private final FundQueryService fundQueryService;
     private final ComplianceService complianceService;
     private final AgentScopeModelInvoker agentScopeModelInvoker;
+    private final FundAdvancedMetricCalculator fundAdvancedMetricCalculator;
 
     public FundWorkflowStageFactory(FundQueryService fundQueryService,
                                     ComplianceService complianceService,
-                                    AgentScopeModelInvoker agentScopeModelInvoker) {
+                                    AgentScopeModelInvoker agentScopeModelInvoker,
+                                    FundAdvancedMetricCalculator fundAdvancedMetricCalculator) {
         this.fundQueryService = fundQueryService;
         this.complianceService = complianceService;
         this.agentScopeModelInvoker = agentScopeModelInvoker;
+        this.fundAdvancedMetricCalculator = fundAdvancedMetricCalculator;
     }
 
     public List<FundWorkflowStage> createStages() {
@@ -53,7 +59,44 @@ public class FundWorkflowStageFactory {
     }
 
     public FundWorkflowGraph createGraph() {
-        return new FundWorkflowGraph(createStages());
+        List<FundWorkflowStage> stages = createStages();
+        return new FundWorkflowGraph(List.of(
+                FundWorkflowNode.always(findStage(stages, FundConstants.AGENT_STAGE_DATA_COLLECTION)),
+                FundWorkflowNode.always(
+                        findStage(stages, FundConstants.AGENT_STAGE_PERFORMANCE_ANALYSIS),
+                        FundConstants.AGENT_STAGE_DATA_COLLECTION),
+                FundWorkflowNode.always(
+                        findStage(stages, FundConstants.AGENT_STAGE_RISK_ANALYSIS),
+                        FundConstants.AGENT_STAGE_DATA_COLLECTION),
+                FundWorkflowNode.conditional(
+                        findStage(stages, FundConstants.AGENT_STAGE_PEER_COMPARISON),
+                        this::shouldRunPeerComparison,
+                        FundConstants.AGENT_STAGE_DATA_COLLECTION),
+                FundWorkflowNode.always(
+                        findStage(stages, FundConstants.AGENT_STAGE_FACTOR_DEBATE),
+                        FundConstants.AGENT_STAGE_PERFORMANCE_ANALYSIS,
+                        FundConstants.AGENT_STAGE_RISK_ANALYSIS,
+                        FundConstants.AGENT_STAGE_PEER_COMPARISON),
+                FundWorkflowNode.always(
+                        findStage(stages, FundConstants.AGENT_STAGE_COMPLIANCE_REVIEW),
+                        FundConstants.AGENT_STAGE_FACTOR_DEBATE),
+                FundWorkflowNode.always(
+                        findStage(stages, FundConstants.AGENT_STAGE_ANSWER_COMPOSER),
+                        FundConstants.AGENT_STAGE_COMPLIANCE_REVIEW)
+        ));
+    }
+
+    private FundWorkflowStage findStage(List<FundWorkflowStage> stages, String stageCode) {
+        return stages.stream()
+                .filter(stage -> stage.stageCode().equals(stageCode))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("缺少工作流阶段: " + stageCode));
+    }
+
+    private boolean shouldRunPeerComparison(FundAgentState state) {
+        return state.getAnalysis() != null
+                && state.getAnalysis().detail() != null
+                && !Boolean.TRUE.equals(state.getAnalysis().detail().stale());
     }
 
     private class DataCollectionStage implements FundWorkflowStage {
@@ -87,9 +130,10 @@ public class FundWorkflowStageFactory {
                     analysisResultVO.dataSource(),
                     DATA_ROUTE,
                     dataQuality,
-                    analysisMode(context),
+                    analysisMode(context, stageCode()),
                     buildAgentNarrative(
                             context,
+                            stageCode(),
                             stageName(),
                             "请检查基金数据来源、样本数量和数据质量，输出一段简短审计意见。",
                             "基金：" + analysisResultVO.detail().fundName()
@@ -128,21 +172,32 @@ public class FundWorkflowStageFactory {
         @Override
         public FundStageResult execute(FundWorkflowContext context) {
             FundMetricVO metrics = context.getState().getAnalysis().metrics();
+            FundAdvancedMetricVO advancedMetrics = fundAdvancedMetricCalculator.calculate(
+                    context.getState().getAnalysis().navPoints());
             FundStructuredReports.PerformanceReport report = new FundStructuredReports.PerformanceReport(
                     formatPercent(metrics.oneMonthReturn()),
                     formatPercent(metrics.threeMonthReturn()),
                     formatPercent(metrics.sixMonthReturn()),
                     formatPercent(metrics.oneYearReturn()),
+                    formatPercent(advancedMetrics.annualizedReturn()),
+                    formatPercent(advancedMetrics.downsideVolatility()),
+                    formatDecimal(advancedMetrics.returnDrawdownRatio()),
+                    advancedMetrics.sampleBoundary(),
                     Objects.toString(metrics.statisticDate(), "暂无"),
-                    analysisMode(context),
+                    analysisMode(context, stageCode()),
                     buildAgentNarrative(
                             context,
+                            stageCode(),
                             stageName(),
                             "请基于历史收益区间生成简短业绩解读，禁止给出买卖建议。",
                             "近1月：" + formatPercent(metrics.oneMonthReturn())
                                     + "\n近3月：" + formatPercent(metrics.threeMonthReturn())
                                     + "\n近6月：" + formatPercent(metrics.sixMonthReturn())
-                                    + "\n近1年：" + formatPercent(metrics.oneYearReturn()),
+                                    + "\n近1年：" + formatPercent(metrics.oneYearReturn())
+                                    + "\n区间年化：" + formatPercent(advancedMetrics.annualizedReturn())
+                                    + "\n下行波动：" + formatPercent(advancedMetrics.downsideVolatility())
+                                    + "\n收益回撤比：" + formatDecimal(advancedMetrics.returnDrawdownRatio())
+                                    + "\n样本边界：" + advancedMetrics.sampleBoundary(),
                             "本阶段使用本地确定性指标解读，未调用 LLM。")
             );
             return FundStageResult.of("已完成收益区间和历史表现梳理。",
@@ -174,9 +229,10 @@ public class FundWorkflowStageFactory {
                     formatPercent(metrics.maxDrawdown()),
                     formatPercent(metrics.volatility()),
                     context.getState().getAnalysis().risks(),
-                    analysisMode(context),
+                    analysisMode(context, stageCode()),
                     buildAgentNarrative(
                             context,
+                            stageCode(),
                             stageName(),
                             "请基于风险等级、最大回撤和波动率生成简短风险解读，禁止预测未来收益。",
                             "风险等级：" + Objects.toString(context.getState().getAnalysis().detail().riskLevel(), "暂无")
@@ -221,9 +277,10 @@ public class FundWorkflowStageFactory {
                     "支付宝基金池演示列表",
                     peers,
                     "横向比较只用于识别差异，不输出排名、买入或卖出建议。",
-                    analysisMode(context),
+                    analysisMode(context, stageCode()),
                     buildAgentNarrative(
                             context,
+                            stageCode(),
                             stageName(),
                             "请基于同池基金指标生成横向差异解读，不要输出排名或购买建议。",
                             String.join("\n", peers),
@@ -273,9 +330,10 @@ public class FundWorkflowStageFactory {
                     positiveFactors,
                     riskFactors,
                     conclusion,
-                    analysisMode(context),
+                    analysisMode(context, stageCode()),
                     buildAgentNarrative(
                             context,
+                            stageCode(),
                             stageName(),
                             "请围绕优势因素和风险因素做平衡讨论，不要转化为买卖动作。",
                             "优势因素：\n- " + String.join("\n- ", positiveFactors)
@@ -372,7 +430,9 @@ public class FundWorkflowStageFactory {
         public FundStageResult execute(FundWorkflowContext context) {
             String deterministicAnswer = buildDeterministicAnswer(context);
             String answer = invokeAgentScope(context, deterministicAnswer);
-            String answerMode = agentScopeModelInvoker.isEnabled() ? "AgentScope + DashScope" : "本地确定性回答";
+            String answerMode = agentScopeModelInvoker.isEnabled()
+                    ? "AgentScope + OpenAI 兼容模型"
+                    : "本地确定性回答";
             FundStructuredReports.AnswerReport report = new FundStructuredReports.AnswerReport(
                     answer,
                     answerMode,
@@ -437,6 +497,8 @@ public class FundWorkflowStageFactory {
                 + "\n历史记忆：\n" + Objects.toString(context.getState().getPastContext(), "暂无")
                 + "\n工作流报告：\n" + renderSections(context);
         return agentScopeModelInvoker.generateFinalAnswer(
+                context.getState().getTaskId(),
+                context.getState().getFundCode(),
                 prompt,
                 fallback,
                 context.getState().getThinkingMode()
@@ -472,6 +534,10 @@ public class FundWorkflowStageFactory {
                 "近3月收益率：" + report.threeMonthReturn(),
                 "近6月收益率：" + report.sixMonthReturn(),
                 "近1年收益率：" + report.oneYearReturn(),
+                "区间年化收益率：" + report.annualizedReturn(),
+                "下行波动率：" + report.downsideVolatility(),
+                "收益回撤比：" + report.returnDrawdownRatio(),
+                "样本边界：" + report.sampleBoundary(),
                 "统计日期：" + report.statisticDate(),
                 "分析模式：" + report.analysisMode(),
                 "Agent 解读：" + report.agentNarrative());
@@ -515,16 +581,19 @@ public class FundWorkflowStageFactory {
                 + "\n\n" + report.answer();
     }
 
-    private String analysisMode(FundWorkflowContext context) {
-        return agentScopeModelInvoker.analysisMode(context.getState().getThinkingMode());
+    private String analysisMode(FundWorkflowContext context, String stageCode) {
+        return agentScopeModelInvoker.analysisMode(stageCode, context.getState().getThinkingMode());
     }
 
     private String buildAgentNarrative(FundWorkflowContext workflowContext,
+                                       String stageCode,
                                        String agentName,
                                        String instruction,
                                        String context,
                                        String fallback) {
         return agentScopeModelInvoker.generateNarrative(
+                workflowContext.getState().getTaskId(),
+                stageCode,
                 agentName,
                 instruction,
                 context,
@@ -543,5 +612,9 @@ public class FundWorkflowStageFactory {
 
     private String formatPercent(BigDecimal value) {
         return value == null ? "暂无" : value.stripTrailingZeros().toPlainString() + "%";
+    }
+
+    private String formatDecimal(BigDecimal value) {
+        return value == null ? "暂无" : value.stripTrailingZeros().toPlainString();
     }
 }

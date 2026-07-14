@@ -2,9 +2,11 @@ package fundcopilot.agent.controller;
 
 import fundcopilot.agent.dto.FundAnalysisRequestDTO;
 import fundcopilot.agent.service.AgentTaskExecutionService;
+import fundcopilot.agent.service.AgentModelCallService;
 import fundcopilot.agent.service.FundAnalysisAgentService;
 import fundcopilot.agent.service.FundAnalysisWorkflowService;
 import fundcopilot.agent.vo.AgentAnalysisResponseVO;
+import fundcopilot.agent.vo.AgentModelCallVO;
 import fundcopilot.agent.vo.AgentStreamEventVO;
 import fundcopilot.agent.vo.FundAgentTaskVO;
 import fundcopilot.common.ApiResponse;
@@ -28,13 +30,16 @@ public class FundAnalysisAgentController {
     private final FundAnalysisAgentService fundAnalysisAgentService;
     private final FundAnalysisWorkflowService fundAnalysisWorkflowService;
     private final AgentTaskExecutionService agentTaskExecutionService;
+    private final AgentModelCallService agentModelCallService;
 
     public FundAnalysisAgentController(FundAnalysisAgentService fundAnalysisAgentService,
                                        FundAnalysisWorkflowService fundAnalysisWorkflowService,
-                                       AgentTaskExecutionService agentTaskExecutionService) {
+                                       AgentTaskExecutionService agentTaskExecutionService,
+                                       AgentModelCallService agentModelCallService) {
         this.fundAnalysisAgentService = fundAnalysisAgentService;
         this.fundAnalysisWorkflowService = fundAnalysisWorkflowService;
         this.agentTaskExecutionService = agentTaskExecutionService;
+        this.agentModelCallService = agentModelCallService;
     }
 
     @PostMapping("/fund-analysis")
@@ -55,6 +60,12 @@ public class FundAnalysisAgentController {
     @GetMapping("/fund-analysis/tasks/{taskId}")
     public ApiResponse<FundAgentTaskVO> getTask(@PathVariable Long taskId) {
         return ApiResponse.ok(fundAnalysisWorkflowService.getTask(taskId));
+    }
+
+    @GetMapping("/fund-analysis/tasks/{taskId}/model-calls")
+    public ApiResponse<List<AgentModelCallVO>> listModelCalls(@PathVariable Long taskId) {
+        fundAnalysisWorkflowService.getTask(taskId);
+        return ApiResponse.ok(agentModelCallService.listByTaskId(taskId));
     }
 
     @GetMapping(path = "/fund-analysis/tasks/{taskId}/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)

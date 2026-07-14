@@ -18,6 +18,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -130,12 +131,33 @@ class FundAnalysisWorkflowServiceTest {
 
         assertThat(taskVO.sections())
                 .anySatisfy(section -> assertThat(section.content()).contains("分析模式：本地确定性分析"));
+        assertThat(taskVO.sections())
+                .anySatisfy(section -> assertThat(section.content()).contains("下行波动率", "样本边界"));
         assertThat(taskVO.stages())
                 .allSatisfy(stage -> {
                     assertThat(stage.stageInput()).isNotBlank();
                     assertThat(stage.stageOutput()).isNotBlank();
                 });
         assertThat(agentTaskMapper.selectById(taskVO.taskId()).getStateSnapshot()).isNotBlank();
+    }
+
+    @Test
+    void createTaskShouldEmitParallelGraphWave() {
+        FundAnalysisRequestDTO requestDTO = new FundAnalysisRequestDTO(
+                "000001",
+                "验证状态图并行分支",
+                Boolean.TRUE,
+                Boolean.TRUE
+        );
+        List<AgentStreamEventVO> events = new CopyOnWriteArrayList<>();
+
+        FundAgentTaskVO taskVO = fundAnalysisWorkflowService.createTask(requestDTO, events::add);
+
+        assertThat(taskVO.status()).isEqualTo(FundConstants.AGENT_STATUS_SUCCESS);
+        assertThat(events)
+                .filteredOn(event -> FundConstants.SSE_PROGRESS.equals(event.type()))
+                .extracting(event -> String.valueOf(event.payload()))
+                .anySatisfy(message -> assertThat(message).contains("并行", "业绩分析", "风险分析", "同池对比"));
     }
 
     @Test
@@ -306,7 +328,8 @@ class FundAnalysisWorkflowServiceTest {
                 .extracting("stageCode")
                 .containsExactly(
                         FundConstants.AGENT_STAGE_DATA_COLLECTION,
-                        FundConstants.AGENT_STAGE_PERFORMANCE_ANALYSIS
+                        FundConstants.AGENT_STAGE_PERFORMANCE_ANALYSIS,
+                        FundConstants.AGENT_STAGE_PEER_COMPARISON
                 );
 
         FundAgentTaskVO rerunTask = fundAnalysisWorkflowService.resumeTask(completedTask.taskId());
