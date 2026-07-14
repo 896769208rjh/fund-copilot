@@ -150,6 +150,27 @@ export interface FundAgentTask {
   createdAt: string | null
 }
 
+export interface AgentModelCall {
+  id: number
+  taskId: number
+  stageCode: string
+  agentName: string
+  modelName: string
+  thinkingMode: AgentThinkingMode
+  promptVersion: string
+  outputSchema: string
+  attemptNo: number
+  status: string
+  inputTokens: number | null
+  outputTokens: number | null
+  inputChars: number
+  outputChars: number
+  elapsedMs: number
+  fallbackReason: string | null
+  errorMessage: string | null
+  createdAt: string
+}
+
 export type AgentStreamEventType =
   | 'PROGRESS'
   | 'AGENT_STEP'

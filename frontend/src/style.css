@@ -201,6 +201,8 @@ h3 {
 .question-block,
 .answer-block,
 .agent-progress,
+.workflow-graph-block,
+.model-telemetry-block,
 .report-block,
 .task-history-block,
 .stage-audit-block {
@@ -215,6 +217,8 @@ h3 {
 .question-block,
 .answer-block,
 .agent-progress,
+.workflow-graph-block,
+.model-telemetry-block,
 .report-block,
 .task-history-block,
 .stage-audit-block {
@@ -715,6 +719,151 @@ h3 {
   margin-bottom: 0;
   color: var(--color-muted);
   line-height: 1.5;
+}
+
+.workflow-graph {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+}
+
+.workflow-row {
+  display: grid;
+  width: min(100%, 520px);
+  grid-template-columns: minmax(0, 180px);
+  justify-content: center;
+  gap: 8px;
+}
+
+.workflow-row.branches {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.workflow-node {
+  display: grid;
+  min-width: 0;
+  min-height: 52px;
+  align-content: center;
+  justify-items: center;
+  gap: 3px;
+  padding: 7px 9px;
+  border: 1px solid #dce4ec;
+  border-radius: 7px;
+  background: #f7f9fb;
+  text-align: center;
+}
+
+.workflow-node strong,
+.workflow-node small {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflow-node strong {
+  color: #35485b;
+  font-size: 13px;
+}
+
+.workflow-node small {
+  color: #7a8794;
+  font-size: 10px;
+}
+
+.workflow-node.status-running {
+  border-color: #6da8d8;
+  background: #edf6fc;
+}
+
+.workflow-node.status-success {
+  border-color: #6db8a8;
+  background: #eef8f5;
+}
+
+.workflow-node.status-failed,
+.workflow-node.status-timeout {
+  border-color: #d99696;
+  background: #fff3f2;
+}
+
+.workflow-node.status-skipped {
+  border-color: #d9b56d;
+  background: #fff8e8;
+}
+
+.workflow-connector {
+  height: 18px;
+  color: #7a8794;
+  font-size: 15px;
+  line-height: 18px;
+}
+
+.telemetry-title small {
+  margin-left: auto;
+  color: var(--color-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.telemetry-list {
+  display: grid;
+  gap: 8px;
+}
+
+.telemetry-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid #e4ebf2;
+  border-radius: 7px;
+  background: var(--color-surface-muted);
+}
+
+.telemetry-row > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.telemetry-row strong,
+.telemetry-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.telemetry-row strong {
+  color: #35485b;
+  font-size: 12px;
+}
+
+.telemetry-row small {
+  color: var(--color-muted);
+  font-size: 10px;
+}
+
+.telemetry-values {
+  justify-items: end;
+}
+
+.telemetry-values span {
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.tone-success {
+  color: #0f766e;
+}
+
+.tone-fallback {
+  color: #a35b00;
+}
+
+.tone-failed {
+  color: #b42318;
 }
 
 .answer-text {

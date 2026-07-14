@@ -15,11 +15,14 @@ import {
 import * as echarts from 'echarts'
 import { fundApi } from './api/fundApi'
 import AgentReportSections from './components/agent/AgentReportSections.vue'
+import AgentModelTelemetry from './components/agent/AgentModelTelemetry.vue'
 import AgentStageAudit from './components/agent/AgentStageAudit.vue'
 import AgentTimeline from './components/agent/AgentTimeline.vue'
+import AgentWorkflowGraph from './components/agent/AgentWorkflowGraph.vue'
 import { streamAnalysisTask, streamFundAnalysis, streamResumeAnalysisTask } from './composables/useAgentStream'
 import type {
   AgentAnalysisResponse,
+  AgentModelCall,
   AgentStep,
   AgentStreamEvent,
   AgentThinkingMode,
@@ -58,6 +61,7 @@ const agentTask = ref<FundAgentTask | null>(null)
 const taskHistory = ref<FundAgentTask[]>([])
 const liveStages = ref<FundAgentStage[]>([])
 const liveSections = ref<FundAgentReportSection[]>([])
+const modelCalls = ref<AgentModelCall[]>([])
 const chartRef = ref<HTMLDivElement | null>(null)
 
 const thinkingModeOptions = [
@@ -341,6 +345,7 @@ async function runAgentAnalysis(): Promise<void> {
   agentGeneratedAt.value = ''
   liveStages.value = []
   liveSections.value = []
+  modelCalls.value = []
   agentTask.value = null
 
   const requestBody = {
@@ -375,6 +380,7 @@ function handleAgentEvent(event: AgentStreamEvent): void {
     agentGeneratedAt.value = ''
     liveStages.value = []
     liveSections.value = []
+    modelCalls.value = []
     if (isFundAgentTask(event.payload)) {
       applyTaskSnapshot(event.payload)
     }
@@ -425,6 +431,7 @@ function handleAgentEvent(event: AgentStreamEvent): void {
       if (event.payload.analysis !== null) {
         analysis.value = event.payload.analysis
       }
+      void refreshModelCalls(event.payload.taskId)
       return
     }
     agentGeneratedAt.value = String(event.payload ?? '')
@@ -453,6 +460,19 @@ async function refreshTaskHistory(): Promise<void> {
   taskHistory.value = await fundApi.listAnalysisTasks(selectedFundCode.value)
 }
 
+async function refreshModelCalls(taskId: number): Promise<void> {
+  try {
+    const calls = await fundApi.listAgentModelCalls(taskId)
+    if (agentTask.value?.taskId === taskId) {
+      modelCalls.value = calls
+    }
+  } catch {
+    if (agentTask.value?.taskId === taskId) {
+      modelCalls.value = []
+    }
+  }
+}
+
 async function replayTask(taskId: number): Promise<void> {
   loading.agent = true
   agentEvents.value = []
@@ -460,6 +480,7 @@ async function replayTask(taskId: number): Promise<void> {
   agentGeneratedAt.value = ''
   liveStages.value = []
   liveSections.value = []
+  modelCalls.value = []
   try {
     await streamAnalysisTask(taskId, handleAgentEvent)
   } catch (error) {
@@ -481,6 +502,7 @@ async function resumeCurrentTask(): Promise<void> {
   agentGeneratedAt.value = ''
   liveStages.value = []
   liveSections.value = []
+  modelCalls.value = []
   try {
     await streamResumeAnalysisTask(agentTask.value.taskId, handleAgentEvent)
     await refreshTaskHistory()
@@ -491,6 +513,7 @@ async function resumeCurrentTask(): Promise<void> {
       applyTaskSnapshot(task)
       agentAnswer.value = task.finalAnswer ?? ''
       agentGeneratedAt.value = task.completedAt ?? ''
+      await refreshModelCalls(task.taskId)
       await refreshTaskHistory()
     } catch (fallbackError) {
       ElMessage.error(errorMessage(fallbackError, '任务恢复失败'))
@@ -534,6 +557,7 @@ async function rerunStage(stageCode: string): Promise<void> {
   loading.taskControl = true
   loading.agent = true
   agentEvents.value = []
+  modelCalls.value = []
   try {
     const task = await fundApi.rerunAnalysisStage(agentTask.value.taskId, stageCode)
     applyTaskSnapshot(task)
@@ -1087,6 +1111,8 @@ function isFundAgentReportSection(payload: unknown): payload is FundAgentReportS
                 </el-button>
               </section>
 
+              <AgentWorkflowGraph :stages="liveStages" />
+
               <section class="answer-block">
                 <div class="section-title">
                   <ChatLineRound class="title-icon" />
@@ -1102,6 +1128,8 @@ function isFundAgentReportSection(payload: unknown): payload is FundAgentReportS
 
             <div class="agent-side">
               <AgentTimeline :steps="agentSteps" :progress-messages="progressMessages" />
+
+              <AgentModelTelemetry :calls="modelCalls" />
 
               <section class="task-history-block">
                 <div class="section-title">

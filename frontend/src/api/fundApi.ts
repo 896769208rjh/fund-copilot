@@ -1,5 +1,6 @@
 import type {
   AgentAnalysisResponse,
+  AgentModelCall,
   ApiResponse,
   FundAnalysisRequest,
   FundAnalysisResult,
@@ -80,6 +81,10 @@ export const fundApi = {
 
   getAnalysisTask(taskId: number): Promise<FundAgentTask> {
     return request<FundAgentTask>(`/agents/fund-analysis/tasks/${taskId}`)
+  },
+
+  listAgentModelCalls(taskId: number): Promise<AgentModelCall[]> {
+    return request<AgentModelCall[]>(`/agents/fund-analysis/tasks/${taskId}/model-calls`)
   },
 
   resumeAnalysisTask(taskId: number): Promise<FundAgentTask> {
