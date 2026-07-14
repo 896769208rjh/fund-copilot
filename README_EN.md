@@ -30,6 +30,8 @@ Implemented capabilities:
 - A demo Alipay fund pool without access to real Alipay accounts.
 - A task-based agent workflow covering data collection, performance analysis, risk analysis, peer comparison, factor discussion, compliance review, and answer composition.
 - Stage handlers and an explicit graph workflow executor, including conditional peer-comparison skipping based on data quality.
+- An explicit directed acyclic state graph: after data collection, performance, risk, and peer analysis run in parallel before joining at factor synthesis, compliance review, and answer composition.
+- Startup validation for duplicate nodes, missing dependencies, and cycles. Recovery resumes from the persisted successful-node set, while stage reruns clear only the target node and its graph descendants.
 - Decoupled task initialization and workflow execution with a named background thread pool, allowing task creation APIs to return immediately.
 - Replayable, task-isolated SSE channels for live subscriptions and persisted event history.
 - Persistent SSE events in `agent_task_event`, allowing ordered replay after an application restart.
@@ -37,6 +39,10 @@ Implemented capabilities:
 - Optional AgentScope invocation in core stages. When LLM access is disabled, the system uses deterministic local analysis and clearly labels the report mode.
 - Centralized AgentScope model construction, timeout control, iteration limits, and fallback handling.
 - An OpenAI-compatible `gpt-5.4` integration with fast, balanced, and deep reasoning modes.
+- Java record structured output for stage narratives and final answers, with required-field validation, one corrective retry, and deterministic fallback.
+- Role-based reasoning effort: data auditing and compliance use fast reasoning, while factor synthesis and final answers use at least balanced reasoning.
+- Persistent `agent_model_call` telemetry covering stage, model, reasoning effort, prompt version, output schema, tokens, latency, retries, and fallback reasons.
+- NAV-derived annualized return, downside volatility, return-to-drawdown ratio, sample size, and observation span, with explicit short-sample limitations.
 - Structured DTOs, Markdown report content, SSE events, and input/output snapshots for each stage.
 - Persistent `agent_task`, `agent_task_stage`, `agent_task_event`, `agent_report_section`, and `agent_memory_entry` tables.
 - Task creation, task details, history, live SSE execution, event replay, failed-task recovery, and Markdown report export.
@@ -149,6 +155,12 @@ To persist the agent reasoning mode, run:
 src/main/resources/sql/upgrade-v2.8-agent-thinking-mode.sql
 ```
 
+To add state-graph model call telemetry, run:
+
+```bash
+src/main/resources/sql/upgrade-v2.9-agent-graph-observability.sql
+```
+
 ## OpenAI-Compatible LLM Configuration
 
 By default, the agent uses deterministic local analysis and does not require an API key. To enable AgentScope with an OpenAI-compatible model, create `config/application-private.yml` in the project root:
@@ -195,6 +207,7 @@ Agent analysis:
 - `POST /api/agents/fund-analysis/stream`: create a task and stream stage events.
 - `POST /api/agents/fund-analysis/tasks`: create a task, return its snapshot immediately, and execute it in the background.
 - `GET /api/agents/fund-analysis/tasks/{taskId}`: get task details.
+- `GET /api/agents/fund-analysis/tasks/{taskId}/model-calls`: list model calls, tokens, latency, retries, and fallback records.
 - `GET /api/agents/fund-analysis/tasks/{taskId}/stream`: subscribe to a running task or replay persisted events.
 - `POST /api/agents/fund-analysis/tasks/{taskId}/resume`: resume a failed or unfinished task in the background.
 - `POST /api/agents/fund-analysis/tasks/{taskId}/resume/stream`: resume a failed or unfinished task with streaming events.
@@ -247,9 +260,9 @@ npm run build
 V2 completion:
 
 - Add optional Redis Streams or message queue execution for multi-instance deployments.
-- Add event archiving, per-user task quotas, model rate limiting, timeout classification, and observability metrics.
+- Add event archiving, per-user task quotas, model rate limiting, cost accounting, and timeout classification.
 - Expand fixture and data-source failure tests for the Eastmoney provider.
-- Improve historical report search, report export, and multi-fund comparison in the frontend.
+- Improve historical report search, model-call filtering, and multi-fund comparison in the frontend.
 
 V3 data enrichment and RAG:
 
