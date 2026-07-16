@@ -31,7 +31,9 @@ import java.math.BigDecimal;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -43,6 +45,8 @@ import java.util.function.Function;
 @Service
 public class FundQueryService {
     private static final int DEFAULT_NAV_LIMIT = 120;
+    private static final int METRIC_NAV_LIMIT = 320;
+    private static final int ONE_YEAR_REQUIRED_SAMPLE_SIZE = 253;
     private static final int MAX_COMPARE_FUND_SIZE = 6;
     private static final String DATA_SOURCE_NAME = "东方财富/天天基金公开数据";
     private static final String HIGH_RISK_LEVEL = "高风险";
@@ -187,14 +191,14 @@ public class FundQueryService {
 
     private FundAnalysisResultVO doAnalyze(String fundCode) {
         FundDetailVO detail = getDetail(fundCode);
-        List<FundNavDO> navList = loadNavList(fundCode, DEFAULT_NAV_LIMIT);
-        FundMetricSnapshotDO metricSnapshotDO = findMetric(fundCode);
-        if (metricSnapshotDO == null && !navList.isEmpty()) {
-            metricSnapshotDO = fundMetricCalculator.calculate(fundCode, navList);
-        }
+        List<FundNavDO> navList = loadNavList(fundCode, METRIC_NAV_LIMIT);
+        FundMetricSnapshotDO metricSnapshotDO = navList.isEmpty()
+                ? findMetric(fundCode)
+                : fundMetricCalculator.calculate(fundCode, navList);
 
-        FundMetricVO metricVO = toMetricVO(metricSnapshotDO);
+        FundMetricVO metricVO = toMetricVO(metricSnapshotDO, navList);
         List<FundNavPointVO> navPoints = navList.stream()
+                .skip(Math.max(0, navList.size() - DEFAULT_NAV_LIMIT))
                 .sorted(Comparator.comparing(FundNavDO::getNavDate))
                 .map(this::toNavPointVO)
                 .toList();
@@ -230,7 +234,7 @@ public class FundQueryService {
         FundProfileDO profileDO = upsertProfile(snapshot);
         upsertNavPoints(safeFundCode, snapshot.navPoints());
 
-        List<FundNavDO> navList = loadNavList(safeFundCode, DEFAULT_NAV_LIMIT);
+        List<FundNavDO> navList = loadNavList(safeFundCode, METRIC_NAV_LIMIT);
         if (!navList.isEmpty()) {
             upsertMetric(fundMetricCalculator.calculate(safeFundCode, navList));
         }
@@ -369,16 +373,33 @@ public class FundQueryService {
         );
     }
 
-    private FundMetricVO toMetricVO(FundMetricSnapshotDO metricSnapshotDO) {
+    private FundMetricVO toMetricVO(FundMetricSnapshotDO metricSnapshotDO, List<FundNavDO> navList) {
+        List<FundNavDO> validNavs = navList.stream()
+                .filter(nav -> nav.getNavDate() != null)
+                .filter(nav -> nav.getUnitNav() != null && nav.getUnitNav().compareTo(BigDecimal.ZERO) > 0)
+                .sorted(Comparator.comparing(FundNavDO::getNavDate))
+                .toList();
+        int sampleSize = validNavs.size();
+        LocalDate sampleStartDate = sampleSize == 0 ? null : validNavs.get(0).getNavDate();
+        LocalDate sampleEndDate = sampleSize == 0 ? null : validNavs.get(sampleSize - 1).getNavDate();
+        long observationDays = sampleStartDate == null || sampleEndDate == null
+                ? 0L
+                : Math.max(0L, ChronoUnit.DAYS.between(sampleStartDate, sampleEndDate));
+        String sampleBoundary = buildSampleBoundary(sampleSize, sampleStartDate, sampleEndDate);
         if (metricSnapshotDO == null) {
             return new FundMetricVO(
-                    BigDecimal.ZERO,
-                    BigDecimal.ZERO,
-                    BigDecimal.ZERO,
-                    BigDecimal.ZERO,
-                    BigDecimal.ZERO,
-                    BigDecimal.ZERO,
-                    null
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    sampleSize,
+                    sampleStartDate,
+                    sampleEndDate,
+                    observationDays,
+                    sampleBoundary
             );
         }
         return new FundMetricVO(
@@ -388,8 +409,25 @@ public class FundQueryService {
                 metricSnapshotDO.getOneYearReturn(),
                 metricSnapshotDO.getMaxDrawdown(),
                 metricSnapshotDO.getVolatility(),
-                metricSnapshotDO.getStatisticDate()
+                metricSnapshotDO.getStatisticDate(),
+                sampleSize,
+                sampleStartDate,
+                sampleEndDate,
+                observationDays,
+                sampleBoundary
         );
+    }
+
+    private String buildSampleBoundary(int sampleSize, LocalDate startDate, LocalDate endDate) {
+        if (sampleSize == 0) {
+            return "暂无有效净值样本，不能计算历史指标。";
+        }
+        String range = startDate + " 至 " + endDate;
+        if (sampleSize < ONE_YEAR_REQUIRED_SAMPLE_SIZE) {
+            return "当前仅有 " + sampleSize + " 条有效净值（" + range
+                    + "），不足周期的收益指标不展示。";
+        }
+        return "基于 " + sampleSize + " 条有效净值（" + range + "）计算，历史表现不代表未来收益。";
     }
 
     private List<String> buildHighlights(FundDetailVO detail, FundMetricVO metrics) {
@@ -397,7 +435,8 @@ public class FundQueryService {
                 "基金类型：" + Objects.toString(detail.fundType(), "未知"),
                 "最新净值日期：" + Objects.toString(detail.latestNavDate(), "暂无"),
                 "近一年收益率：" + formatPercent(metrics.oneYearReturn()),
-                "申购状态：" + Objects.toString(detail.purchaseStatus(), "以平台确认为准")
+                "申购状态：" + Objects.toString(detail.purchaseStatus(), "以平台确认为准"),
+                "样本边界：" + metrics.sampleBoundary()
         );
     }
 
@@ -405,6 +444,9 @@ public class FundQueryService {
         List<String> baseRisks = new ArrayList<>();
         baseRisks.add("最大回撤：" + formatPercent(metrics.maxDrawdown()) + "，回撤越大代表历史波动压力越高。");
         baseRisks.add("年化波动率：" + formatPercent(metrics.volatility()) + "，仅反映历史净值波动。");
+        if (metrics.sampleSize() < ONE_YEAR_REQUIRED_SAMPLE_SIZE) {
+            baseRisks.add(metrics.sampleBoundary());
+        }
         if (detail.riskLevel() != null && detail.riskLevel().contains(HIGH_RISK_LEVEL)) {
             baseRisks.add("该基金风险等级较高，需结合自身风险承受能力判断。");
         }

@@ -42,8 +42,10 @@ fund-copilot:
   market-data:
     eastmoney:
       timeout-seconds: 6
-      nav-page-size: 120
+      nav-page-size: 20
+      nav-history-size: 320
       request-interval-ms: 300
+      demo-fallback-enabled: ${FUND_MARKET_DEMO_FALLBACK_ENABLED:true}
   agent:
     base-url: ${FUND_OPENAI_BASE_URL:}
     api-key: ${FUND_OPENAI_API_KEY:}

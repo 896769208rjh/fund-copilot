@@ -38,3 +38,6 @@ build/
 !.env.example
 /config/application-local.yml
 /config/application-private.yml
+
+### Local development logs ###
+/tmp/*.log

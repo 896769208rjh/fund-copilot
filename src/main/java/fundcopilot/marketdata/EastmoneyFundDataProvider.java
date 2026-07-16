@@ -8,6 +8,8 @@ import fundcopilot.marketdata.MarketDataDtos.MarketFundSearchItem;
 import fundcopilot.marketdata.MarketDataDtos.MarketNavPoint;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
@@ -16,7 +18,10 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Component
 public class EastmoneyFundDataProvider implements FundDataProvider {
@@ -27,18 +32,23 @@ public class EastmoneyFundDataProvider implements FundDataProvider {
     private static final String DEFAULT_STATUS = "以销售平台确认为准";
     private static final String DEFAULT_RISK_LEVEL = "请以基金销售平台风险等级为准";
     private static final int SEARCH_LIMIT = 20;
+    private static final int MAX_NAV_PAGE_COUNT = 100;
 
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
     private final MarketDataProperties properties;
 
+    @Autowired
     public EastmoneyFundDataProvider(ObjectMapper objectMapper, MarketDataProperties properties) {
+        this(objectMapper, properties, createRestClient(properties));
+    }
+
+    EastmoneyFundDataProvider(ObjectMapper objectMapper,
+                              MarketDataProperties properties,
+                              RestClient restClient) {
         this.objectMapper = objectMapper;
         this.properties = properties;
-        this.restClient = RestClient.builder()
-                .defaultHeader("User-Agent", USER_AGENT)
-                .defaultHeader("Referer", REFERER)
-                .build();
+        this.restClient = restClient;
     }
 
     @Override
@@ -69,8 +79,14 @@ public class EastmoneyFundDataProvider implements FundDataProvider {
                     navPoints
             );
         } catch (Exception exception) {
-            LOGGER.warn("Fetch eastmoney fund data failed, fundCode={}", fundCode, exception);
-            return fallbackSnapshot(fundCode);
+            if (properties.isDemoFallbackEnabled()) {
+                LOGGER.warn("Fetch eastmoney fund data failed, using demo fallback, fundCode={}",
+                        fundCode, exception);
+                return fallbackSnapshot(fundCode);
+            }
+            LOGGER.warn("Fetch eastmoney fund data failed and demo fallback is disabled, fundCode={}, error={}",
+                    fundCode, exception.toString());
+            throw new MarketDataUnavailableException("东方财富基金数据暂时不可用: " + fundCode, exception);
         }
     }
 
@@ -83,13 +99,8 @@ public class EastmoneyFundDataProvider implements FundDataProvider {
         try {
             throttle();
             String response = restClient.get()
-                    .uri(uriBuilder -> uriBuilder
-                            .scheme("https")
-                            .host("fundsuggest.eastmoney.com")
-                            .path("/FundSearch/api/FundSearchAPI.ashx")
-                            .queryParam("m", 1)
-                            .queryParam("key", keyword.trim())
-                            .build())
+                    .uri(properties.getSearchBaseUrl()
+                            + "/FundSearch/api/FundSearchAPI.ashx?m=1&key={keyword}", keyword.trim())
                     .retrieve()
                     .body(String.class);
             if (response == null || response.isBlank()) {
@@ -119,46 +130,62 @@ public class EastmoneyFundDataProvider implements FundDataProvider {
     }
 
     private List<MarketNavPoint> fetchNavPoints(String fundCode) throws Exception {
-        String response = restClient.get()
-                .uri(uriBuilder -> uriBuilder
-                        .scheme("https")
-                        .host("api.fund.eastmoney.com")
-                        .path("/f10/lsjz")
-                        .queryParam("fundCode", fundCode)
-                        .queryParam("pageIndex", 1)
-                        .queryParam("pageSize", properties.getNavPageSize())
-                        .build())
-                .retrieve()
-                .body(String.class);
+        int pageSize = Math.max(1, properties.getNavPageSize());
+        int historySize = Math.max(pageSize, properties.getNavHistorySize());
+        Map<LocalDate, MarketNavPoint> pointsByDate = new LinkedHashMap<>();
 
-        if (response == null || response.isBlank()) {
-            return List.of();
+        for (int pageIndex = 1; pageIndex <= MAX_NAV_PAGE_COUNT && pointsByDate.size() < historySize; pageIndex++) {
+            throttle();
+            String response = restClient.get()
+                    .uri(properties.getNavBaseUrl()
+                                    + "/f10/lsjz?fundCode={fundCode}&pageIndex={pageIndex}&pageSize={pageSize}",
+                            fundCode, pageIndex, pageSize)
+                    .retrieve()
+                    .body(String.class);
+            MarketNavPage navPage = parseNavPage(fundCode, response);
+            navPage.points().forEach(point -> pointsByDate.putIfAbsent(point.navDate(), point));
+            if (navPage.points().isEmpty()
+                    || navPage.totalCount() > 0 && pointsByDate.size() >= navPage.totalCount()) {
+                break;
+            }
         }
 
+        if (pointsByDate.isEmpty()) {
+            throw new IllegalStateException("东方财富未返回有效净值数据");
+        }
+        return pointsByDate.values().stream()
+                .sorted(Comparator.comparing(MarketNavPoint::navDate).reversed())
+                .limit(historySize)
+                .toList();
+    }
+
+    private MarketNavPage parseNavPage(String fundCode, String response) throws Exception {
+        if (response == null || response.isBlank()) {
+            return new MarketNavPage(List.of(), 0);
+        }
         JsonNode root = objectMapper.readTree(response);
         JsonNode list = root.path("Data").path("LSJZList");
-        List<MarketNavPoint> points = new ArrayList<>();
         if (!list.isArray()) {
-            return points;
+            return new MarketNavPage(List.of(), root.path("TotalCount").asInt(0));
         }
-
+        List<MarketNavPoint> points = new ArrayList<>();
         for (JsonNode item : list) {
             LocalDate date = parseDate(item.path("FSRQ").asText(null));
             BigDecimal unitNav = parseDecimal(item.path("DWJZ").asText(null));
-            BigDecimal accumulatedNav = parseDecimal(item.path("LJJZ").asText(null));
-            BigDecimal growthRate = parseDecimal(item.path("JZZZL").asText(null));
             if (date != null && unitNav != null) {
                 points.add(new MarketNavPoint(
                         date,
                         unitNav,
-                        accumulatedNav,
-                        growthRate,
+                        parseDecimal(item.path("LJJZ").asText(null)),
+                        parseDecimal(item.path("JZZZL").asText(null)),
                         FundConstants.EASTMONEY_FUND_PAGE_PREFIX + fundCode + ".html"
                 ));
             }
         }
+        return new MarketNavPage(points, root.path("TotalCount").asInt(0));
+    }
 
-        return points;
+    private record MarketNavPage(List<MarketNavPoint> points, int totalCount) {
     }
 
     private MarketFundSnapshot fallbackSnapshot(String fundCode) {
@@ -235,5 +262,17 @@ public class EastmoneyFundDataProvider implements FundDataProvider {
             return null;
         }
         return new BigDecimal(value);
+    }
+
+    private static RestClient createRestClient(MarketDataProperties properties) {
+        Duration timeout = Duration.ofSeconds(Math.max(1, properties.getTimeoutSeconds()));
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(timeout);
+        requestFactory.setReadTimeout(timeout);
+        return RestClient.builder()
+                .requestFactory(requestFactory)
+                .defaultHeader("User-Agent", USER_AGENT)
+                .defaultHeader("Referer", REFERER)
+                .build();
     }
 }

@@ -16,7 +16,8 @@ public class FundMetricCalculator {
 
     public FundMetricSnapshotDO calculate(String fundCode, List<FundNavDO> navs) {
         List<FundNavDO> sorted = navs.stream()
-                .filter(nav -> nav.getUnitNav() != null)
+                .filter(nav -> nav.getNavDate() != null)
+                .filter(nav -> nav.getUnitNav() != null && nav.getUnitNav().compareTo(BigDecimal.ZERO) > 0)
                 .sorted(Comparator.comparing(FundNavDO::getNavDate))
                 .toList();
 
@@ -34,11 +35,11 @@ public class FundMetricCalculator {
     }
 
     private BigDecimal returnFromWindow(List<FundNavDO> navs, int tradingDays) {
-        if (navs.size() < 2) {
-            return BigDecimal.ZERO;
+        if (navs.size() < tradingDays + 1) {
+            return null;
         }
 
-        int start = Math.max(0, navs.size() - tradingDays - 1);
+        int start = navs.size() - tradingDays - 1;
         BigDecimal first = navs.get(start).getUnitNav();
         BigDecimal last = navs.get(navs.size() - 1).getUnitNav();
 

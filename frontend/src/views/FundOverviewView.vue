@@ -156,6 +156,15 @@ onBeforeUnmount(() => {
       </article>
     </section>
 
+    <el-alert
+      v-if="analysis?.metrics.sampleBoundary"
+      class="sample-boundary"
+      :title="analysis.metrics.sampleBoundary"
+      type="info"
+      :closable="false"
+      show-icon
+    />
+
     <section class="chart-panel" aria-label="净值走势">
       <div class="section-heading">
         <div>

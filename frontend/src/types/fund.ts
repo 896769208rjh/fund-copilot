@@ -37,6 +37,11 @@ export interface FundMetric {
   maxDrawdown: number | null
   volatility: number | null
   statisticDate: string | null
+  sampleSize: number
+  sampleStartDate: string | null
+  sampleEndDate: string | null
+  observationDays: number
+  sampleBoundary: string
 }
 
 export interface FundAnalysisResult {

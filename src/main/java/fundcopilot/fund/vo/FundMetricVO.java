@@ -10,6 +10,11 @@ public record FundMetricVO(
         BigDecimal oneYearReturn,
         BigDecimal maxDrawdown,
         BigDecimal volatility,
-        LocalDate statisticDate
+        LocalDate statisticDate,
+        int sampleSize,
+        LocalDate sampleStartDate,
+        LocalDate sampleEndDate,
+        long observationDays,
+        String sampleBoundary
 ) {
 }

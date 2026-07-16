@@ -7,3 +7,7 @@ spring:
   sql:
     init:
       mode: never
+fund-copilot:
+  market-data:
+    eastmoney:
+      demo-fallback-enabled: ${FUND_MARKET_DEMO_FALLBACK_ENABLED:false}
