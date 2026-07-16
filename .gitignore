@@ -41,3 +41,6 @@ build/
 
 ### Local development logs ###
 /tmp/*.log
+
+### Generated private artifacts ###
+/output/pdf/
