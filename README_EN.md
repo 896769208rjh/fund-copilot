@@ -23,7 +23,8 @@ Implemented capabilities:
 - H2 is used by default for local demos, with optional MySQL and Redis configurations.
 - Fund search, details, historical NAV, metric analysis, and manual synchronization APIs.
 - Local and Eastmoney remote search by fund code, name, or name abbreviation.
-- Eastmoney and Tiantian Fund public data providers with deterministic local demo fallback data.
+- Eastmoney and Tiantian Fund public data providers with paginated synchronization of up to 320 valid NAV records, connection/read timeouts, and request throttling.
+- The H2 demo profile explicitly allows local demo fallback data. The MySQL profile disables demo fallback by default and reports remote-data failures instead of persisting fabricated data.
 - One-click synchronization when a six-digit fund code is not found locally.
 - Multi-fund comparison across fund type, company, manager, return, drawdown, volatility, trading status, and data source.
 - Redis caching for search, details, NAV, analysis, and comparison results, with automatic fallback when Redis is unavailable.
@@ -43,6 +44,8 @@ Implemented capabilities:
 - Role-based reasoning effort: data auditing and compliance use fast reasoning, while factor synthesis and final answers use at least balanced reasoning.
 - Persistent `agent_model_call` telemetry covering stage, model, reasoning effort, prompt version, output schema, tokens, latency, retries, and fallback reasons.
 - NAV-derived annualized return, downside volatility, return-to-drawdown ratio, sample size, and observation span, with explicit short-sample limitations.
+- Strict sample requirements for period returns: 1-month, 3-month, 6-month, and 1-year returns require at least 23, 67, 133, and 253 valid NAV records respectively. Insufficient periods return `null` and render as `--` instead of being mislabeled as a complete period.
+- Fund analysis responses include sample size, sample start/end dates, observation days, and a sample-boundary explanation. Charts continue to show the latest 120 NAV records, while metric calculations use up to 320 records.
 - Structured DTOs, Markdown report content, SSE events, and input/output snapshots for each stage.
 - Persistent `agent_task`, `agent_task_stage`, `agent_task_event`, `agent_report_section`, and `agent_memory_entry` tables.
 - Task creation, task details, history, live SSE execution, event replay, failed-task recovery, and Markdown report export.
@@ -160,6 +163,28 @@ To add state-graph model call telemetry, run:
 ```bash
 src/main/resources/sql/upgrade-v2.9-agent-graph-observability.sql
 ```
+
+## Market Data and Sample Configuration
+
+The default market-data configuration is:
+
+```yaml
+fund-copilot:
+  market-data:
+    eastmoney:
+      timeout-seconds: 6
+      nav-page-size: 20
+      nav-history-size: 320
+      request-interval-ms: 300
+      demo-fallback-enabled: true
+```
+
+- `nav-page-size`: requested Eastmoney page size. The current public endpoint effectively caps a page at 20 records.
+- `nav-history-size`: target NAV history used for synchronization and metric calculation.
+- `demo-fallback-enabled`: whether a remote failure may produce demo data marked with `stale=true`. It defaults to `true` for H2 and `false` for the MySQL profile.
+- `FUND_MARKET_DEMO_FALLBACK_ENABLED` overrides the demo-fallback setting.
+
+Period-return windows are never silently shortened. If fewer than 23, 67, 133, or 253 valid NAV records are available, the corresponding 1-month, 3-month, 6-month, or 1-year return is `null`. The response also exposes the actual sample range so the frontend can explain why a metric is unavailable.
 
 ## OpenAI-Compatible LLM Configuration
 
