@@ -1,5 +1,13 @@
 package fundcopilot.agent.workflow;
 
+import fundcopilot.agent.contract.AnswerComposerAgentContract;
+import fundcopilot.agent.contract.ComplianceAgentContract;
+import fundcopilot.agent.contract.DataCollectionAgentContract;
+import fundcopilot.agent.contract.FactorDebateAgentContract;
+import fundcopilot.agent.contract.PeerComparisonAgentContract;
+import fundcopilot.agent.contract.PerformanceAgentContract;
+import fundcopilot.agent.contract.RiskAgentContract;
+
 import java.util.List;
 
 public final class FundStructuredReports {
@@ -13,7 +21,7 @@ public final class FundStructuredReports {
             String dataRoute,
             String dataQuality,
             String analysisMode,
-            String agentNarrative,
+            DataCollectionAgentContract.Output assessment,
             int sampleSize
     ) {
     }
@@ -29,7 +37,7 @@ public final class FundStructuredReports {
             String sampleBoundary,
             String statisticDate,
             String analysisMode,
-            String agentNarrative
+            PerformanceAgentContract.Output interpretation
     ) {
     }
 
@@ -39,7 +47,7 @@ public final class FundStructuredReports {
             String volatility,
             List<String> riskItems,
             String analysisMode,
-            String agentNarrative
+            RiskAgentContract.Output assessment
     ) {
     }
 
@@ -48,7 +56,7 @@ public final class FundStructuredReports {
             List<String> peers,
             String boundary,
             String analysisMode,
-            String agentNarrative
+            PeerComparisonAgentContract.Output comparison
     ) {
     }
 
@@ -57,19 +65,17 @@ public final class FundStructuredReports {
             List<String> riskFactors,
             String conclusion,
             String analysisMode,
-            String agentNarrative
+            FactorDebateAgentContract.Output discussion
     ) {
     }
 
     public record ComplianceReport(
-            boolean restricted,
-            String message,
-            String disclaimer
+            ComplianceAgentContract.Output review
     ) {
     }
 
     public record AnswerReport(
-            String answer,
+            AnswerComposerAgentContract.Output answer,
             String answerMode,
             String boundary
     ) {

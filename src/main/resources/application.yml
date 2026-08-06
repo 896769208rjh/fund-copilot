@@ -49,7 +49,7 @@ fund-copilot:
   agent:
     base-url: ${FUND_OPENAI_BASE_URL:}
     api-key: ${FUND_OPENAI_API_KEY:}
-    model-name: ${FUND_OPENAI_MODEL:gpt-5.4}
+    model-name: ${FUND_OPENAI_MODEL:gpt-5.5}
     enable-llm: ${FUND_AGENT_ENABLE_LLM:false}
     stage-max-iterations: ${FUND_AGENT_STAGE_MAX_ITERATIONS:3}
     final-max-iterations: ${FUND_AGENT_FINAL_MAX_ITERATIONS:6}

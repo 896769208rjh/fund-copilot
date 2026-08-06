@@ -2,6 +2,13 @@ package fundcopilot.agent.workflow;
 
 import fundcopilot.agent.service.AgentScopeModelInvoker;
 import fundcopilot.agent.service.FundAgentState;
+import fundcopilot.agent.contract.AnswerComposerAgentContract;
+import fundcopilot.agent.contract.ComplianceAgentContract;
+import fundcopilot.agent.contract.DataCollectionAgentContract;
+import fundcopilot.agent.contract.FactorDebateAgentContract;
+import fundcopilot.agent.contract.PeerComparisonAgentContract;
+import fundcopilot.agent.contract.PerformanceAgentContract;
+import fundcopilot.agent.contract.RiskAgentContract;
 import fundcopilot.agent.vo.AgentStreamEventVO;
 import fundcopilot.compliance.ComplianceService;
 import fundcopilot.compliance.ComplianceService.ComplianceResult;
@@ -121,6 +128,34 @@ public class FundWorkflowStageFactory {
             String dataQuality = Boolean.TRUE.equals(analysisResultVO.detail().stale())
                     ? "使用本地演示兜底数据，需谨慎解读。"
                     : "公开数据已同步到本地库，可用于演示分析。";
+            DataCollectionAgentContract.Input agentInput = new DataCollectionAgentContract.Input(
+                    analysisResultVO.detail().fundCode(),
+                    analysisResultVO.detail().fundName(),
+                    Objects.toString(analysisResultVO.detail().fundType(), "未知"),
+                    Objects.toString(analysisResultVO.detail().latestNav(), "暂无"),
+                    Objects.toString(analysisResultVO.detail().latestNavDate(), "暂无"),
+                    analysisResultVO.dataSource(),
+                    DATA_ROUTE,
+                    dataQuality,
+                    analysisResultVO.navPoints().size(),
+                    Boolean.TRUE.equals(analysisResultVO.detail().stale())
+            );
+            DataCollectionAgentContract.Output fallback = new DataCollectionAgentContract.Output(
+                    agentInput.stale() ? "STALE" : "AVAILABLE",
+                    "已完成确定性数据质量检查。",
+                    List.of("数据来源：" + agentInput.dataSource(), "样本数量：" + agentInput.sampleSize() + " 条"),
+                    agentInput.stale()
+                            ? List.of("当前使用本地演示兜底数据，结论精度受限。")
+                            : List.of("当前未发现数据过期标记，仍需以数据日期为准。"),
+                    "数据质量检查不能替代基金风险判断，也不能推导未来表现。"
+            );
+            DataCollectionAgentContract.Output assessment = agentScopeModelInvoker.assessDataQuality(
+                    context.getState().getTaskId(),
+                    stageName(),
+                    agentInput,
+                    fallback,
+                    context.getState().getThinkingMode()
+            );
             FundStructuredReports.DataReport report = new FundStructuredReports.DataReport(
                     analysisResultVO.detail().fundCode(),
                     analysisResultVO.detail().fundName(),
@@ -131,17 +166,7 @@ public class FundWorkflowStageFactory {
                     DATA_ROUTE,
                     dataQuality,
                     analysisMode(context, stageCode()),
-                    buildAgentNarrative(
-                            context,
-                            stageCode(),
-                            stageName(),
-                            "请检查基金数据来源、样本数量和数据质量，输出一段简短审计意见。",
-                            "基金：" + analysisResultVO.detail().fundName()
-                                    + "\n代码：" + analysisResultVO.detail().fundCode()
-                                    + "\n数据来源：" + analysisResultVO.dataSource()
-                                    + "\n样本数量：" + analysisResultVO.navPoints().size()
-                                    + "\n数据质量：" + dataQuality,
-                            "本阶段使用本地确定性数据检查，已记录数据路由和数据质量。"),
+                    assessment,
                     analysisResultVO.navPoints().size()
             );
 
@@ -174,6 +199,41 @@ public class FundWorkflowStageFactory {
             FundMetricVO metrics = context.getState().getAnalysis().metrics();
             FundAdvancedMetricVO advancedMetrics = fundAdvancedMetricCalculator.calculate(
                     context.getState().getAnalysis().navPoints());
+            PerformanceAgentContract.Input agentInput = new PerformanceAgentContract.Input(
+                    context.getState().getFundCode(),
+                    context.getState().getAnalysis().detail().fundType(),
+                    metrics.statisticDate(),
+                    metrics.oneMonthReturn(),
+                    metrics.threeMonthReturn(),
+                    metrics.sixMonthReturn(),
+                    metrics.oneYearReturn(),
+                    advancedMetrics.annualizedReturn(),
+                    advancedMetrics.downsideVolatility(),
+                    advancedMetrics.returnDrawdownRatio(),
+                    advancedMetrics.sampleBoundary()
+            );
+            PerformanceAgentContract.Output fallback = new PerformanceAgentContract.Output(
+                    "已根据确定性指标完成历史业绩梳理。",
+                    List.of(
+                            "近1月收益率：" + formatPercent(metrics.oneMonthReturn()),
+                            "近3月收益率：" + formatPercent(metrics.threeMonthReturn()),
+                            "近6月收益率：" + formatPercent(metrics.sixMonthReturn()),
+                            "近1年收益率：" + formatPercent(metrics.oneYearReturn())
+                    ),
+                    List.of(
+                            "区间年化收益率：" + formatPercent(advancedMetrics.annualizedReturn()),
+                            "下行波动率：" + formatPercent(advancedMetrics.downsideVolatility()),
+                            "收益回撤比：" + formatDecimal(advancedMetrics.returnDrawdownRatio())
+                    ),
+                    List.of(advancedMetrics.sampleBoundary(), "历史表现不能推导未来收益。")
+            );
+            PerformanceAgentContract.Output interpretation = agentScopeModelInvoker.analyzePerformance(
+                    context.getState().getTaskId(),
+                    stageName(),
+                    agentInput,
+                    fallback,
+                    context.getState().getThinkingMode()
+            );
             FundStructuredReports.PerformanceReport report = new FundStructuredReports.PerformanceReport(
                     formatPercent(metrics.oneMonthReturn()),
                     formatPercent(metrics.threeMonthReturn()),
@@ -185,20 +245,7 @@ public class FundWorkflowStageFactory {
                     advancedMetrics.sampleBoundary(),
                     Objects.toString(metrics.statisticDate(), "暂无"),
                     analysisMode(context, stageCode()),
-                    buildAgentNarrative(
-                            context,
-                            stageCode(),
-                            stageName(),
-                            "请基于历史收益区间生成简短业绩解读，禁止给出买卖建议。",
-                            "近1月：" + formatPercent(metrics.oneMonthReturn())
-                                    + "\n近3月：" + formatPercent(metrics.threeMonthReturn())
-                                    + "\n近6月：" + formatPercent(metrics.sixMonthReturn())
-                                    + "\n近1年：" + formatPercent(metrics.oneYearReturn())
-                                    + "\n区间年化：" + formatPercent(advancedMetrics.annualizedReturn())
-                                    + "\n下行波动：" + formatPercent(advancedMetrics.downsideVolatility())
-                                    + "\n收益回撤比：" + formatDecimal(advancedMetrics.returnDrawdownRatio())
-                                    + "\n样本边界：" + advancedMetrics.sampleBoundary(),
-                            "本阶段使用本地确定性指标解读，未调用 LLM。")
+                    interpretation
             );
             return FundStageResult.of("已完成收益区间和历史表现梳理。",
                     List.of(toReport(stageCode(), "历史表现", renderPerformanceReport(report), report)));
@@ -224,22 +271,45 @@ public class FundWorkflowStageFactory {
         @Override
         public FundStageResult execute(FundWorkflowContext context) {
             FundMetricVO metrics = context.getState().getAnalysis().metrics();
+            FundAdvancedMetricVO advancedMetrics = fundAdvancedMetricCalculator.calculate(
+                    context.getState().getAnalysis().navPoints());
+            List<String> knownRisks = context.getState().getAnalysis().risks().isEmpty()
+                    ? List.of("当前暂无结构化风险项，仍需关注市场波动和样本边界。")
+                    : context.getState().getAnalysis().risks();
+            RiskAgentContract.Input agentInput = new RiskAgentContract.Input(
+                    context.getState().getFundCode(),
+                    context.getState().getAnalysis().detail().fundType(),
+                    Objects.toString(context.getState().getAnalysis().detail().riskLevel(), "暂无"),
+                    metrics.maxDrawdown(),
+                    metrics.volatility(),
+                    advancedMetrics.downsideVolatility(),
+                    knownRisks,
+                    metrics.sampleBoundary()
+            );
+            RiskAgentContract.Output fallback = new RiskAgentContract.Output(
+                    "已根据确定性指标完成风险梳理。",
+                    knownRisks,
+                    List.of("最大回撤：" + formatPercent(metrics.maxDrawdown())),
+                    List.of(
+                            "年化波动率：" + formatPercent(metrics.volatility()),
+                            "下行波动率：" + formatPercent(advancedMetrics.downsideVolatility())
+                    ),
+                    List.of(metrics.sampleBoundary(), "历史风险指标不能预测未来损失。")
+            );
+            RiskAgentContract.Output assessment = agentScopeModelInvoker.analyzeRisk(
+                    context.getState().getTaskId(),
+                    stageName(),
+                    agentInput,
+                    fallback,
+                    context.getState().getThinkingMode()
+            );
             FundStructuredReports.RiskReport report = new FundStructuredReports.RiskReport(
                     Objects.toString(context.getState().getAnalysis().detail().riskLevel(), "暂无"),
                     formatPercent(metrics.maxDrawdown()),
                     formatPercent(metrics.volatility()),
-                    context.getState().getAnalysis().risks(),
+                    knownRisks,
                     analysisMode(context, stageCode()),
-                    buildAgentNarrative(
-                            context,
-                            stageCode(),
-                            stageName(),
-                            "请基于风险等级、最大回撤和波动率生成简短风险解读，禁止预测未来收益。",
-                            "风险等级：" + Objects.toString(context.getState().getAnalysis().detail().riskLevel(), "暂无")
-                                    + "\n最大回撤：" + formatPercent(metrics.maxDrawdown())
-                                    + "\n年化波动：" + formatPercent(metrics.volatility())
-                                    + "\n风险项：" + String.join("；", context.getState().getAnalysis().risks()),
-                            "本阶段使用本地确定性风险解读，未调用 LLM。")
+                    assessment
             );
             return FundStageResult.of("已完成回撤、波动率和风险等级解释。",
                     List.of(toReport(stageCode(), "波动与回撤", renderRiskReport(report), report)));
@@ -273,18 +343,35 @@ public class FundWorkflowStageFactory {
             List<String> peers = peerLines.isEmpty()
                     ? List.of("当前演示基金池暂无可比较基金。")
                     : peerLines;
-            FundStructuredReports.PeerComparisonReport report = new FundStructuredReports.PeerComparisonReport(
-                    "支付宝基金池演示列表",
+            String peerUniverse = "支付宝基金池演示列表";
+            String comparisonBoundary = "横向比较只用于识别差异，不输出排名、买入或卖出建议。";
+            PeerComparisonAgentContract.Input agentInput = new PeerComparisonAgentContract.Input(
+                    context.getState().getFundCode(),
+                    context.getState().getAnalysis().detail().fundType(),
+                    peerUniverse,
                     peers,
-                    "横向比较只用于识别差异，不输出排名、买入或卖出建议。",
+                    comparisonBoundary
+            );
+            PeerComparisonAgentContract.Output fallback = new PeerComparisonAgentContract.Output(
+                    "已根据确定性同池指标完成横向梳理。",
+                    peerLines.isEmpty() ? "当前没有足够的同池样本。" : "当前样本仅用于有限横向参考。",
+                    peers,
+                    List.of("比较池和样本数量有限，不能据此形成购买排序。"),
+                    comparisonBoundary
+            );
+            PeerComparisonAgentContract.Output comparison = agentScopeModelInvoker.comparePeers(
+                    context.getState().getTaskId(),
+                    stageName(),
+                    agentInput,
+                    fallback,
+                    context.getState().getThinkingMode()
+            );
+            FundStructuredReports.PeerComparisonReport report = new FundStructuredReports.PeerComparisonReport(
+                    peerUniverse,
+                    peers,
+                    comparisonBoundary,
                     analysisMode(context, stageCode()),
-                    buildAgentNarrative(
-                            context,
-                            stageCode(),
-                            stageName(),
-                            "请基于同池基金指标生成横向差异解读，不要输出排名或购买建议。",
-                            String.join("\n", peers),
-                            "本阶段使用本地确定性同池对比，未调用 LLM。")
+                    comparison
             );
             return FundStageResult.of("已基于演示基金池生成横向参考，不输出排名或购买建议。",
                     List.of(toReport(stageCode(), "支付宝基金池横向参考", renderPeerReport(report), report)));
@@ -326,19 +413,32 @@ public class FundWorkflowStageFactory {
             List<String> positiveFactors = buildPositiveFactors(context, metrics);
             List<String> riskFactors = buildRiskFactors(context, metrics);
             String conclusion = "以上只用于形成分析维度，不转化为买卖动作。";
+            FactorDebateAgentContract.Input agentInput = new FactorDebateAgentContract.Input(
+                    context.getState().getFundCode(),
+                    positiveFactors,
+                    riskFactors,
+                    context.getState().getPastContext() != null && !context.getState().getPastContext().isBlank(),
+                    conclusion
+            );
+            FactorDebateAgentContract.Output fallback = new FactorDebateAgentContract.Output(
+                    positiveFactors,
+                    riskFactors,
+                    List.of("当前结论仅基于历史指标，尚不能覆盖未来市场和基金运作变化。"),
+                    conclusion
+            );
+            FactorDebateAgentContract.Output discussion = agentScopeModelInvoker.discussFactors(
+                    context.getState().getTaskId(),
+                    stageName(),
+                    agentInput,
+                    fallback,
+                    context.getState().getThinkingMode()
+            );
             FundStructuredReports.FactorDiscussionReport report = new FundStructuredReports.FactorDiscussionReport(
                     positiveFactors,
                     riskFactors,
                     conclusion,
                     analysisMode(context, stageCode()),
-                    buildAgentNarrative(
-                            context,
-                            stageCode(),
-                            stageName(),
-                            "请围绕优势因素和风险因素做平衡讨论，不要转化为买卖动作。",
-                            "优势因素：\n- " + String.join("\n- ", positiveFactors)
-                                    + "\n风险因素：\n- " + String.join("\n- ", riskFactors),
-                            "本阶段使用本地确定性因素讨论，未调用 LLM。")
+                    discussion
             );
             context.getState().setPositiveFactors(positiveFactors);
             context.getState().setRiskFactors(riskFactors);
@@ -391,11 +491,25 @@ public class FundWorkflowStageFactory {
 
         @Override
         public FundStageResult execute(FundWorkflowContext context) {
+            ComplianceAgentContract.Input agentInput = new ComplianceAgentContract.Input(
+                    context.getState().getQuestion());
             ComplianceResult complianceResult = complianceService.check(context.getState().getQuestion());
-            FundStructuredReports.ComplianceReport report = new FundStructuredReports.ComplianceReport(
+            ComplianceAgentContract.Output review = new ComplianceAgentContract.Output(
                     complianceResult.restricted(),
                     complianceResult.message(),
+                    complianceResult.restricted()
+                            ? List.of("INVESTMENT_ADVICE_OR_RETURN_PROMISE")
+                            : List.of(),
+                    complianceResult.restricted()
+                            ? List.of("只保留公开事实分析", "明确风险和适用边界", "删除买卖或收益承诺表达")
+                            : List.of("保持事实分析和风险揭示"),
                     complianceResult.disclaimer()
+            );
+            if (!review.isValid() || agentInput.question() == null) {
+                throw new IllegalStateException("合规审核 Agent 契约无效");
+            }
+            FundStructuredReports.ComplianceReport report = new FundStructuredReports.ComplianceReport(
+                    review
             );
             context.getState().setComplianceResult(complianceResult);
             FundStageResult result = FundStageResult.of(
@@ -428,8 +542,15 @@ public class FundWorkflowStageFactory {
 
         @Override
         public FundStageResult execute(FundWorkflowContext context) {
-            String deterministicAnswer = buildDeterministicAnswer(context);
-            String answer = invokeAgentScope(context, deterministicAnswer);
+            AnswerComposerAgentContract.Input agentInput = buildAnswerInput(context);
+            AnswerComposerAgentContract.Output deterministicAnswer = buildDeterministicAnswer(context, agentInput);
+            AnswerComposerAgentContract.Output answer = agentScopeModelInvoker.composeAnswer(
+                    context.getState().getTaskId(),
+                    stageName(),
+                    agentInput,
+                    deterministicAnswer,
+                    context.getState().getThinkingMode()
+            );
             String answerMode = agentScopeModelInvoker.isEnabled()
                     ? "AgentScope + OpenAI 兼容模型"
                     : "本地确定性回答";
@@ -438,7 +559,7 @@ public class FundWorkflowStageFactory {
                     answerMode,
                     ANSWER_BOUNDARY
             );
-            context.getState().setFinalAnswer(answer);
+            context.getState().setFinalAnswer(answer.render());
             return FundStageResult.of("已生成合规客服回答。",
                     List.of(toReport(stageCode(), "最终回答", renderAnswerReport(report), report)));
         }
@@ -455,63 +576,63 @@ public class FundWorkflowStageFactory {
         return new FundStageReport(sectionType, title, content, structuredData);
     }
 
-    private String buildDeterministicAnswer(FundWorkflowContext context) {
-        FundAnalysisResultVO analysisResultVO = context.getState().getAnalysis();
-        ComplianceResult complianceResult = context.getState().getComplianceResult();
-        StringBuilder builder = new StringBuilder();
-        builder.append("已基于公开数据完成基金分析。");
-        if (complianceResult != null && complianceResult.restricted()) {
-            builder.append("你的问题涉及买卖建议或收益承诺，我将只提供事实分析、风险揭示和适当性提醒。");
-        }
-        builder.append("\n\n基金：")
-                .append(analysisResultVO.detail().fundName())
-                .append("（")
-                .append(analysisResultVO.detail().fundCode())
-                .append("）");
-        builder.append("\n数据日期：")
-                .append(Objects.toString(analysisResultVO.detail().latestNavDate(), "暂无"));
-        builder.append("\n历史表现：近1年收益率 ")
-                .append(formatPercent(analysisResultVO.metrics().oneYearReturn()))
-                .append("，最大回撤 ")
-                .append(formatPercent(analysisResultVO.metrics().maxDrawdown()))
-                .append("，年化波动率 ")
-                .append(formatPercent(analysisResultVO.metrics().volatility()))
-                .append("。");
-        builder.append("\n风险点：")
-                .append(String.join("；", context.getState().getRiskFactors()));
-        builder.append("\n数据质量：")
-                .append(Objects.toString(context.getState().getDataQuality(), "暂无"));
-        if (context.getState().getPastContext() != null && !context.getState().getPastContext().isBlank()) {
-            builder.append("\n历史记忆：本次回答已参考同基金历史分析口径。");
-        }
-        builder.append("\n适用边界：以上指标只反映公开数据和历史表现，不能推导未来收益，也不能替代个人风险承受能力评估。");
-        builder.append("\n\n")
-                .append(ComplianceService.STANDARD_DISCLAIMER);
-        return builder.toString();
-    }
-
-    private String invokeAgentScope(FundWorkflowContext context, String fallback) {
-        String prompt = "基金代码：" + context.getState().getFundCode()
-                + "\n用户问题：" + context.getState().getQuestion()
-                + "\n合规检查：" + context.getState().getComplianceResult().message()
-                + "\n历史记忆：\n" + Objects.toString(context.getState().getPastContext(), "暂无")
-                + "\n工作流报告：\n" + renderSections(context);
-        return agentScopeModelInvoker.generateFinalAnswer(
-                context.getState().getTaskId(),
-                context.getState().getFundCode(),
-                prompt,
-                fallback,
-                context.getState().getThinkingMode()
-        );
-    }
-
-    private String renderSections(FundWorkflowContext context) {
-        return context.getState().getSections()
+    private AnswerComposerAgentContract.Input buildAnswerInput(FundWorkflowContext context) {
+        List<String> workflowReports = context.getState().getSections()
                 .stream()
                 .sorted(Comparator.comparing(section -> section.sortOrder() == null ? 0 : section.sortOrder()))
                 .map(section -> "## " + section.title() + "\n" + section.content())
-                .reduce((left, right) -> left + "\n\n" + right)
-                .orElse("");
+                .toList();
+        List<String> sourceSections = context.getState().getSections()
+                .stream()
+                .sorted(Comparator.comparing(section -> section.sortOrder() == null ? 0 : section.sortOrder()))
+                .map(section -> section.stageCode() + ":" + section.title())
+                .toList();
+        return new AnswerComposerAgentContract.Input(
+                context.getState().getFundCode(),
+                Objects.toString(context.getState().getAnalysis().detail().latestNavDate(), "暂无"),
+                context.getState().getQuestion(),
+                context.getState().getComplianceResult().message(),
+                Objects.toString(context.getState().getPastContext(), "暂无"),
+                workflowReports,
+                sourceSections
+        );
+    }
+
+    private AnswerComposerAgentContract.Output buildDeterministicAnswer(
+            FundWorkflowContext context,
+            AnswerComposerAgentContract.Input input) {
+        FundAnalysisResultVO analysisResultVO = context.getState().getAnalysis();
+        ComplianceResult complianceResult = context.getState().getComplianceResult();
+        StringBuilder summary = new StringBuilder("已基于公开数据完成基金分析。");
+        if (complianceResult != null && complianceResult.restricted()) {
+            summary.append("你的问题涉及买卖建议或收益承诺，我将只提供事实分析、风险揭示和适当性提醒。");
+        }
+        summary.append("基金为")
+                .append(analysisResultVO.detail().fundName())
+                .append("（")
+                .append(analysisResultVO.detail().fundCode())
+                .append("）。");
+        if (context.getState().getPastContext() != null && !context.getState().getPastContext().isBlank()) {
+            summary.append("本次回答已参考同基金历史分析口径。");
+        }
+        List<String> riskPoints = context.getState().getRiskFactors().isEmpty()
+                ? List.of("基金净值存在波动风险，历史表现不能代表未来。")
+                : context.getState().getRiskFactors();
+        return new AnswerComposerAgentContract.Output(
+                input.fundCode(),
+                input.dataDate(),
+                summary.toString(),
+                List.of(
+                        "近1年收益率 " + formatPercent(analysisResultVO.metrics().oneYearReturn()),
+                        "最大回撤 " + formatPercent(analysisResultVO.metrics().maxDrawdown()),
+                        "年化波动率 " + formatPercent(analysisResultVO.metrics().volatility()),
+                        "数据质量：" + Objects.toString(context.getState().getDataQuality(), "暂无")
+                ),
+                riskPoints,
+                input.sourceSections(),
+                "以上指标只反映公开数据和历史表现，不能推导未来收益，也不能替代个人风险承受能力评估。",
+                ComplianceService.STANDARD_DISCLAIMER
+        );
     }
 
     private String renderDataReport(FundStructuredReports.DataReport report) {
@@ -524,7 +645,7 @@ public class FundWorkflowStageFactory {
                 "数据路由：" + report.dataRoute(),
                 "数据质量：" + report.dataQuality(),
                 "分析模式：" + report.analysisMode(),
-                "Agent 解读：" + report.agentNarrative(),
+                "Agent 解读：" + report.assessment().render(),
                 "样本数量：" + report.sampleSize() + " 条");
     }
 
@@ -540,7 +661,7 @@ public class FundWorkflowStageFactory {
                 "样本边界：" + report.sampleBoundary(),
                 "统计日期：" + report.statisticDate(),
                 "分析模式：" + report.analysisMode(),
-                "Agent 解读：" + report.agentNarrative());
+                "Agent 解读：" + report.interpretation().render());
     }
 
     private String renderRiskReport(FundStructuredReports.RiskReport report) {
@@ -549,7 +670,7 @@ public class FundWorkflowStageFactory {
                 "最大回撤：" + report.maxDrawdown(),
                 "年化波动率：" + report.volatility(),
                 "分析模式：" + report.analysisMode(),
-                "Agent 解读：" + report.agentNarrative(),
+                "Agent 解读：" + report.assessment().render(),
                 "风险提示：" + String.join("；", report.riskItems()));
     }
 
@@ -557,7 +678,7 @@ public class FundWorkflowStageFactory {
         return "对比池：" + report.peerUniverse()
                 + "\n" + String.join("\n", report.peers())
                 + "\n分析模式：" + report.analysisMode()
-                + "\nAgent 解读：" + report.agentNarrative()
+                + "\nAgent 解读：" + report.comparison().render()
                 + "\n边界：" + report.boundary();
     }
 
@@ -565,41 +686,23 @@ public class FundWorkflowStageFactory {
         return "优势因素：\n- " + String.join("\n- ", report.positiveFactors())
                 + "\n\n风险因素：\n- " + String.join("\n- ", report.riskFactors())
                 + "\n\n分析模式：" + report.analysisMode()
-                + "\nAgent 解读：" + report.agentNarrative()
+                + "\nAgent 解读：" + report.discussion().render()
                 + "\n\n讨论结论：" + report.conclusion();
     }
 
     private String renderComplianceReport(FundStructuredReports.ComplianceReport report) {
-        return "是否触发限制：" + (report.restricted() ? "是" : "否")
-                + "\n" + report.message()
-                + "\n" + report.disclaimer();
+        return "是否触发限制：" + (report.review().restricted() ? "是" : "否")
+                + "\n" + report.review().render();
     }
 
     private String renderAnswerReport(FundStructuredReports.AnswerReport report) {
         return "回答模式：" + report.answerMode()
                 + "\n边界：" + report.boundary()
-                + "\n\n" + report.answer();
+                + "\n\n" + report.answer().render();
     }
 
     private String analysisMode(FundWorkflowContext context, String stageCode) {
         return agentScopeModelInvoker.analysisMode(stageCode, context.getState().getThinkingMode());
-    }
-
-    private String buildAgentNarrative(FundWorkflowContext workflowContext,
-                                       String stageCode,
-                                       String agentName,
-                                       String instruction,
-                                       String context,
-                                       String fallback) {
-        return agentScopeModelInvoker.generateNarrative(
-                workflowContext.getState().getTaskId(),
-                stageCode,
-                agentName,
-                instruction,
-                context,
-                fallback,
-                workflowContext.getState().getThinkingMode()
-        );
     }
 
     private boolean isPositive(BigDecimal value) {
