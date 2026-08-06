@@ -6,7 +6,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class AgentProperties {
     private String baseUrl;
     private String apiKey;
-    private String modelName = "gpt-5.4";
+    private String modelName = "gpt-5.6-terra";
     private boolean enableLlm = false;
     private int stageMaxIterations = 3;
     private int finalMaxIterations = 6;

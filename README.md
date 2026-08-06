@@ -39,7 +39,7 @@ Fund Copilot 是一个面向基金业务场景的智能客服与基金分析工�
 - 已实现任务幂等创建、任务取消、整体超时、指定阶段重跑和应用启动自动恢复未完成任务。
 - 已为核心阶段增加可选 AgentScope 调用：启用 LLM 时由阶段 Agent 生成解读，未启用时走本地确定性分析并在报告中明确标注。
 - 已将 AgentScope 模型创建、超时、迭代次数和失败降级收敛到统一调用器。
-- AgentScope 已接入 OpenAI 兼容接口和 `gpt-5.4`，支持快速、适中、仔细三档思考模式。
+- AgentScope 已接入 OpenAI 兼容接口和 `gpt-5.6-terra`，支持快速、适中、仔细三档思考模式。
 - AgentScope 阶段解读和最终回答已使用 Java record 结构化输出，包含字段校验、一次纠错重试和确定性 fallback。
 - 已按角色分配实际推理强度：数据审计与合规使用快速模式，因素汇聚和最终回答至少使用适中模式。
 - 已新增 `agent_model_call` 模型调用审计，记录阶段、模型、推理强度、Prompt 版本、输出 Schema、Token、耗时、重试和降级原因。
@@ -195,7 +195,7 @@ fund-copilot:
   agent:
     base-url: https://your-openai-compatible-service/v1
     api-key: your_key
-    model-name: gpt-5.4
+    model-name: gpt-5.6-terra
     enable-llm: true
     stage-max-iterations: 3
     final-max-iterations: 6

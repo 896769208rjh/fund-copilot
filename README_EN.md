@@ -39,7 +39,7 @@ Implemented capabilities:
 - Idempotent task creation, cancellation, global timeout control, stage reruns, and automatic recovery of unfinished tasks at startup.
 - Optional AgentScope invocation in core stages. When LLM access is disabled, the system uses deterministic local analysis and clearly labels the report mode.
 - Centralized AgentScope model construction, timeout control, iteration limits, and fallback handling.
-- An OpenAI-compatible `gpt-5.4` integration with fast, balanced, and deep reasoning modes.
+- An OpenAI-compatible `gpt-5.6-terra` integration with fast, balanced, and deep reasoning modes.
 - Java record structured output for stage narratives and final answers, with required-field validation, one corrective retry, and deterministic fallback.
 - Role-based reasoning effort: data auditing and compliance use fast reasoning, while factor synthesis and final answers use at least balanced reasoning.
 - Persistent `agent_model_call` telemetry covering stage, model, reasoning effort, prompt version, output schema, tokens, latency, retries, and fallback reasons.
@@ -195,7 +195,7 @@ fund-copilot:
   agent:
     base-url: https://your-openai-compatible-service/v1
     api-key: your_key
-    model-name: gpt-5.4
+    model-name: gpt-5.6-terra
     enable-llm: true
     stage-max-iterations: 3
     final-max-iterations: 6
