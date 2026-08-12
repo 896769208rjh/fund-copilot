@@ -175,15 +175,22 @@ src/main/resources/sql/upgrade-v2.9-agent-graph-observability.sql
 src/main/resources/sql/upgrade-v3.0-fund-observation-ranking.sql
 ```
 
-该脚本只创建新表。应用不会在 MySQL profile 下自动执行迁移，需由数据库管理员手动执行。
+已经执行过 V3.0，升级观察榜数据日、任务心跳和日榜唯一键时，再执行：
+
+```bash
+src/main/resources/sql/upgrade-v3.1-observation-reliability.sql
+```
+
+V3.1 会用已有指标快照回填真实数据日、终止遗留的 `RUNNING` 任务，并将历史进入/退出 streak 重置为 0，避免旧版按运行日误累计的状态继续影响榜单。应用不会在 MySQL profile 下自动执行迁移，需由数据库管理员手动执行。
 
 ## 公开近期表现观察榜
 
 - 基金池：主动股票型、偏股混合型、债券型、指数型，每类按基金规模选约 100 个基金主体；可识别的 A/C 等份额会合并规模并只选择一个主份额参与排名。
 - 评分：完全由已落库净值计算，不调用 LLM。主动股票/偏股混合、债券、指数分别使用类别化权重。
 - 样本门槛：至少 133 条有效净值并具备近 6 月收益、最大回撤和波动率才可参与排名。
-- 稳定规则：当日原始 Top 10 为满足条件；连续 3 日才进入，已在榜基金连续 3 日不满足才退出。首次建榜为避免空榜可直接发布当日 Top 10。
-- 失败语义：上游某类数据暂不可用时保留原基金池；单只基金同步失败不会中断整批；发布失败时公开接口继续读取最近成功榜单。
+- 稳定规则：同类基金仅在同一主流数据日内比较；原始 Top 10 为满足条件。连续 3 个不同净值数据日才进入，已在榜基金连续 3 个不同净值数据日不满足才退出。同日重算和周末重复调度不会累计 streak；首次建榜为避免空榜可直接发布当前 Top 10。
+- 失败语义：上游某类数据暂不可用时保留原基金池；单只基金同步失败不会中断整批；发布失败时公开接口继续读取最近成功榜单。任务每处理 10 只基金更新进度和心跳，默认 120 分钟无心跳会在启动或下次执行前标记为失败。
+- 补偿调度：20:00 执行主同步；22:30 仅在当天 20:00 后无可接受结果时重试；次日 08:00 检查昨日 20:00 至当前的同步结果，不会因为跨自然日而固定重复同步。
 - 合规边界：榜单只说明客观历史指标和排序，不回答“应该买哪只”，不构成投资建议。
 
 管理员接口：
@@ -193,6 +200,8 @@ POST /api/admin/observations/sync
 POST /api/admin/observations/rank
 GET  /api/admin/observations/sync-jobs/latest
 ```
+
+MySQL profile 默认关闭管理员接口。需要手动同步时设置 `FUND_OBSERVATION_ADMIN_ENABLED=true`，并必须在 Nginx/Caddy、VPN 或内网访问策略中保护 `/api/admin/**`。该开关只控制端点是否存在，不提供身份认证；不要将未受保护的管理员接口暴露到公网。
 
 公开接口：
 
@@ -221,12 +230,16 @@ fund-copilot:
     entry-streak-days: 3
     exit-streak-days: 3
     sync-history-size: 320
+    job-timeout-minutes: 120
+    admin-endpoints-enabled: true
 ```
 
 - `nav-page-size`：东方财富单页请求数量。当前公开接口实际会限制为 20 条。
 - `nav-history-size`：单只基金同步和指标计算的目标净值数量。
 - `demo-fallback-enabled`：远程同步失败时是否允许生成带 `stale=true` 标记的演示数据。默认 H2 配置为 `true`，MySQL profile 为 `false`。
 - 环境变量 `FUND_MARKET_DEMO_FALLBACK_ENABLED` 可以覆盖演示兜底开关。
+- `job-timeout-minutes`：运行中任务的心跳超时阈值。
+- `admin-endpoints-enabled`：是否注册观察榜管理员接口；MySQL profile 默认 `false`，启用时仍需外层鉴权。
 
 周期收益不会自动缩短观察窗口。有效净值不足 23、67、133、253 条时，对应的近 1 月、3 月、6 月、1 年收益为 `null`。接口同时返回实际样本范围，前端使用样本边界提示解释不可用原因。
 

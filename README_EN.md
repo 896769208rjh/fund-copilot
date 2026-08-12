@@ -175,15 +175,22 @@ To add the four fund universes and public observation board, run:
 src/main/resources/sql/upgrade-v3.0-fund-observation-ranking.sql
 ```
 
-This migration only creates new tables. The MySQL profile never runs it automatically; a database administrator must execute it manually.
+If V3.0 has already been applied, upgrade the source-date tracking, job heartbeat, and daily-rank key with:
+
+```bash
+src/main/resources/sql/upgrade-v3.1-observation-reliability.sql
+```
+
+V3.1 backfills source dates from persisted metric snapshots, terminates stale `RUNNING` jobs, and resets historical entry/exit streaks so counts produced by the old run-date behavior cannot affect the board. The MySQL profile never runs migrations automatically; a database administrator must execute them manually.
 
 ## Public Recent-Performance Observation Board
 
 - Universe: active equity, equity-heavy hybrid, bond, and index funds, with roughly 100 fund entities per category selected by scale. Recognizable A/C share classes are grouped and one primary share participates in ranking.
 - Scoring: computed only from persisted NAV facts without LLM involvement. Category-specific weights are used for equity/hybrid, bond, and index funds.
 - Eligibility: at least 133 valid NAV points plus 6-month return, maximum drawdown, and volatility are required.
-- Stability: the raw daily Top 10 qualifies. Entry requires three qualifying dates and exit requires three disqualifying dates. The first publication may seed the current Top 10 to avoid an empty board.
-- Failure semantics: a failed upstream category retains its previous universe; one failed fund does not abort the batch; public reads continue using the latest successfully published board.
+- Stability: funds in a category are compared only on one common dominant source-data date. The raw Top 10 qualifies. Entry and exit require three distinct NAV data dates; reruns on the same date and weekend schedules do not advance streaks. The first publication may seed the current Top 10 to avoid an empty board.
+- Failure semantics: a failed upstream category retains its previous universe; one failed fund does not abort the batch; public reads continue using the latest successfully published board. Progress and heartbeat are updated every ten funds, and jobs without a heartbeat for 120 minutes are failed during startup or before the next job starts.
+- Compensation schedule: the primary sync runs at 20:00; the 22:30 retry runs only when there is no acceptable result after 20:00; the 08:00 compensation checks the window from 20:00 on the previous day, so crossing midnight no longer causes an unconditional duplicate sync.
 - Compliance: this is an objective historical observation list, not a recommendation or an answer to which fund should be bought.
 
 Administrator APIs:
@@ -193,6 +200,8 @@ POST /api/admin/observations/sync
 POST /api/admin/observations/rank
 GET  /api/admin/observations/sync-jobs/latest
 ```
+
+The MySQL profile disables administrator endpoints by default. Set `FUND_OBSERVATION_ADMIN_ENABLED=true` to enable manual synchronization, and protect `/api/admin/**` with Nginx/Caddy authentication, a VPN, or a private-network policy. This flag controls endpoint registration only; it is not authentication and must not be used to expose administrator APIs publicly.
 
 Public APIs:
 
@@ -221,12 +230,16 @@ fund-copilot:
     entry-streak-days: 3
     exit-streak-days: 3
     sync-history-size: 320
+    job-timeout-minutes: 120
+    admin-endpoints-enabled: true
 ```
 
 - `nav-page-size`: requested Eastmoney page size. The current public endpoint effectively caps a page at 20 records.
 - `nav-history-size`: target NAV history used for synchronization and metric calculation.
 - `demo-fallback-enabled`: whether a remote failure may produce demo data marked with `stale=true`. It defaults to `true` for H2 and `false` for the MySQL profile.
 - `FUND_MARKET_DEMO_FALLBACK_ENABLED` overrides the demo-fallback setting.
+- `job-timeout-minutes`: heartbeat timeout for running observation jobs.
+- `admin-endpoints-enabled`: registers observation administrator APIs. The MySQL profile defaults to `false`; external authentication remains required when enabled.
 
 Period-return windows are never silently shortened. If fewer than 23, 67, 133, or 253 valid NAV records are available, the corresponding 1-month, 3-month, 6-month, or 1-year return is `null`. The response also exposes the actual sample range so the frontend can explain why a metric is unavailable.
 
