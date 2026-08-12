@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, watch } from 'vue'
 import FundNavigation from '@/components/layout/FundNavigation.vue'
 import WorkspaceHeader from '@/components/layout/WorkspaceHeader.vue'
 import { useFundWorkbench } from '@/composables/useFundWorkbench'
@@ -8,8 +8,6 @@ import AgentAnalysisView from '@/views/AgentAnalysisView.vue'
 import FundCompareView from '@/views/FundCompareView.vue'
 import FundOverviewView from '@/views/FundOverviewView.vue'
 import FundObservationView from '@/views/FundObservationView.vue'
-
-const isInitialized = ref(false)
 
 const { activeModule, activeModuleMeta, setActiveModule } = useWorkspaceNavigation()
 const {
@@ -23,7 +21,9 @@ const {
   navPoints,
   searchKeyword,
   selectedFundCode,
-  initializeWorkbench,
+  initializeComparison,
+  initializeNavigation,
+  initializeOverview,
   runFundComparison,
   searchFunds,
   selectFund,
@@ -32,23 +32,30 @@ const {
   updateAnalysis,
 } = useFundWorkbench()
 
-onMounted(async () => {
-  try {
-    await initializeWorkbench()
-  } finally {
-    isInitialized.value = true
-  }
-})
+onMounted(initializeNavigation)
+
+watch(
+  activeModule,
+  async (moduleName) => {
+    if (moduleName === 'overview') {
+      await initializeOverview()
+    } else if (moduleName === 'compare') {
+      await initializeComparison()
+    }
+  },
+  { immediate: true },
+)
 
 async function openFundFromObservation(fundCode: string): Promise<void> {
-  await selectFund(fundCode)
-  setActiveModule('overview')
+  if (await selectFund(fundCode)) {
+    setActiveModule('overview')
+  }
 }
 </script>
 
 <template>
   <el-config-provider>
-    <main v-loading="loading.detail" class="fund-workbench">
+    <main class="fund-workbench">
       <FundNavigation
         v-model:search-keyword="searchKeyword"
         :active-module="activeModule"
@@ -77,6 +84,7 @@ async function openFundFromObservation(fundCode: string): Promise<void> {
 
         <FundOverviewView
           v-else-if="activeModule === 'overview'"
+          v-loading="loading.detail"
           :fund-code="selectedFundCode"
           :detail="detail"
           :nav-points="navPoints"
@@ -92,8 +100,7 @@ async function openFundFromObservation(fundCode: string): Promise<void> {
         />
 
         <AgentAnalysisView
-          v-if="isInitialized"
-          v-show="activeModule === 'agent'"
+          v-else-if="activeModule === 'agent'"
           :fund-code="selectedFundCode"
           @analysis-updated="updateAnalysis"
         />

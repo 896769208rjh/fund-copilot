@@ -14,25 +14,31 @@ const board = ref<ObservationBoard | null>(null)
 const latestJob = ref<FundSyncJob | null>(null)
 const loading = ref(false)
 const startingSync = ref(false)
+const adminAvailable = ref(true)
 let pollTimer: number | undefined
 
 const syncing = computed(() => latestJob.value?.status === 'RUNNING')
 const jobSummary = computed(() => {
   const job = latestJob.value
   if (job === null) return '尚无同步记录'
-  if (job.status === 'RUNNING') return `同步中 ${job.successCount}/${job.totalCount || '--'}`
-  if (job.status === 'SUCCESS') return `最近同步成功 · ${job.successCount} 只`
+  const jobName = job.jobType === 'RANKING' ? '观察榜排名' : '基金池同步'
+  if (job.status === 'RUNNING') return `${jobName}中 ${job.successCount}/${job.totalCount || '--'}`
+  if (job.status === 'SUCCESS') return `最近${jobName}成功 · ${job.successCount} 只`
   if (job.status === 'PARTIAL_SUCCESS')
-    return `部分成功 · ${job.successCount} 成功 / ${job.failedCount} 失败`
-  return '最近同步失败，已保留原榜单'
+    return `${jobName}部分成功 · ${job.successCount} 成功 / ${job.failedCount} 失败`
+  return `最近${jobName}失败，已保留原榜单`
 })
 
 async function loadBoard(): Promise<void> {
   loading.value = true
   try {
     board.value = await fundApi.observationBoard()
-    latestJob.value = await fundApi.latestObservationJob()
-    if (syncing.value) startPolling()
+    try {
+      latestJob.value = await fundApi.latestObservationJob()
+      if (syncing.value) startPolling()
+    } catch {
+      adminAvailable.value = false
+    }
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '观察榜加载失败')
   } finally {
@@ -44,9 +50,7 @@ async function startSync(): Promise<void> {
   startingSync.value = true
   try {
     latestJob.value = await fundApi.syncObservationUniverse()
-    ElMessage.info(
-      latestJob.value.status === 'RUNNING' ? '基金池同步已开始' : '已有同步任务正在执行',
-    )
+    ElMessage.info(latestJob.value.status === 'RUNNING' ? '基金池同步已开始' : '同步任务未启动')
     startPolling()
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '同步任务启动失败')
@@ -63,7 +67,11 @@ function startPolling(): void {
       if (!syncing.value) {
         stopPolling()
         board.value = await fundApi.observationBoard()
-        if (latestJob.value?.status === 'SUCCESS') ElMessage.success('基金池和观察榜已更新')
+        if (latestJob.value?.status === 'SUCCESS') {
+          ElMessage.success(
+            latestJob.value.jobType === 'RANKING' ? '观察榜排名已更新' : '基金池和观察榜已更新',
+          )
+        }
       }
     } catch {
       stopPolling()
@@ -92,7 +100,7 @@ onBeforeUnmount(stopPolling)
           <p>{{ board?.methodology || '榜单仅使用已落库的公开净值与规模数据计算。' }}</p>
         </div>
       </div>
-      <div class="observation-sync">
+      <div v-if="adminAvailable" class="observation-sync">
         <div>
           <span>数据任务</span>
           <strong>{{ jobSummary }}</strong>

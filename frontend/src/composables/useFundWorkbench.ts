@@ -36,18 +36,35 @@ export function useFundWorkbench() {
   })
 
   let fundRequestVersion = 0
+  let navigationInitialization: Promise<void> | null = null
+  let overviewInitialized = false
+  let comparisonInitialized = false
 
-  async function initializeWorkbench(): Promise<void> {
-    await Promise.all([loadAlipayFundPool(), searchFunds(false)])
+  async function initializeNavigation(): Promise<void> {
+    navigationInitialization ??= (async () => {
+      await Promise.all([loadAlipayFundPool(), searchFunds(false)])
 
-    const poolCodes = alipayFundPool.value.map((fund) => fund.fundCode).slice(0, 3)
-    if (poolCodes.length > 0) {
-      compareInput.value = poolCodes.join(', ')
-    }
+      const poolCodes = alipayFundPool.value.map((fund) => fund.fundCode).slice(0, 3)
+      if (poolCodes.length > 0) {
+        compareInput.value = poolCodes.join(', ')
+      }
 
-    const firstFundCode = alipayFundPool.value[0]?.fundCode ?? DEFAULT_FUND_CODE
-    await selectFund(firstFundCode)
-    await runFundComparison(false)
+      const firstFundCode = alipayFundPool.value[0]?.fundCode ?? DEFAULT_FUND_CODE
+      selectedFundCode.value = firstFundCode
+    })()
+    await navigationInitialization
+  }
+
+  async function initializeOverview(): Promise<void> {
+    await initializeNavigation()
+    if (overviewInitialized && detail.value?.fundCode === selectedFundCode.value) return
+    overviewInitialized = await loadFundData(selectedFundCode.value)
+  }
+
+  async function initializeComparison(): Promise<void> {
+    await initializeNavigation()
+    if (comparisonInitialized) return
+    comparisonInitialized = await runFundComparison(false)
   }
 
   async function loadAlipayFundPool(): Promise<void> {
@@ -73,12 +90,14 @@ export function useFundWorkbench() {
     }
   }
 
-  async function selectFund(fundCode: string): Promise<void> {
+  async function selectFund(fundCode: string): Promise<boolean> {
     selectedFundCode.value = fundCode
-    await loadFundData(fundCode)
+    const loaded = await loadFundData(fundCode)
+    overviewInitialized = loaded
+    return loaded
   }
 
-  async function loadFundData(fundCode: string): Promise<void> {
+  async function loadFundData(fundCode: string): Promise<boolean> {
     const requestVersion = ++fundRequestVersion
     loading.detail = true
 
@@ -90,16 +109,18 @@ export function useFundWorkbench() {
       ])
 
       if (requestVersion !== fundRequestVersion) {
-        return
+        return false
       }
 
       detail.value = detailResult
       navPoints.value = navResult
       analysis.value = analysisResult
+      return true
     } catch (error) {
       if (requestVersion === fundRequestVersion) {
         ElMessage.error(getErrorMessage(error, '基金数据加载失败'))
       }
+      return false
     } finally {
       if (requestVersion === fundRequestVersion) {
         loading.detail = false
@@ -140,11 +161,11 @@ export function useFundWorkbench() {
     }
   }
 
-  async function runFundComparison(showSuccessMessage = true): Promise<void> {
+  async function runFundComparison(showSuccessMessage = true): Promise<boolean> {
     const fundCodes = parseFundCodes(compareInput.value)
     if (fundCodes.length === 0) {
       ElMessage.warning('请输入至少一个基金代码')
-      return
+      return false
     }
 
     loading.compare = true
@@ -153,8 +174,11 @@ export function useFundWorkbench() {
       if (showSuccessMessage) {
         ElMessage.success('基金对比已更新')
       }
+      comparisonInitialized = true
+      return true
     } catch (error) {
       ElMessage.error(getErrorMessage(error, '基金对比失败'))
+      return false
     } finally {
       loading.compare = false
     }
@@ -175,7 +199,9 @@ export function useFundWorkbench() {
     navPoints,
     searchKeyword,
     selectedFundCode,
-    initializeWorkbench,
+    initializeComparison,
+    initializeNavigation,
+    initializeOverview,
     runFundComparison,
     searchFunds,
     selectFund,
