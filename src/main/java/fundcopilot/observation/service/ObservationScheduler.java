@@ -18,12 +18,12 @@ public class ObservationScheduler {
 
     @Scheduled(cron = "${fund-copilot.observation.schedule.retry-sync:0 30 22 * * *}", zone = "Asia/Shanghai")
     public void retrySync() {
-        syncService.runRetryIfNeeded("SCHEDULED_22_30");
+        syncService.runEveningRetryIfNeeded("SCHEDULED_22_30");
     }
 
     @Scheduled(cron = "${fund-copilot.observation.schedule.compensation-sync:0 0 8 * * *}", zone = "Asia/Shanghai")
     public void compensationSync() {
-        syncService.runRetryIfNeeded("SCHEDULED_08_00");
+        syncService.runMorningCompensationIfNeeded("SCHEDULED_08_00");
     }
 
     @Scheduled(cron = "${fund-copilot.observation.schedule.ranking:0 30 8 * * *}", zone = "Asia/Shanghai")

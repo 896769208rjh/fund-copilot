@@ -19,6 +19,7 @@ public class FundSyncJobDO {
     private Integer successCount;
     private Integer failedCount;
     private LocalDateTime startedAt;
+    private LocalDateTime heartbeatAt;
     private LocalDateTime completedAt;
     private String errorMessage;
     private LocalDateTime createdAt;

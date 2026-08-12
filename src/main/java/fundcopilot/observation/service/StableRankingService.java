@@ -73,22 +73,27 @@ public class StableRankingService {
         boolean firstPublication = memberships.values().stream().noneMatch(item -> item.getLastEvaluatedDate() != null);
         Set<Long> allMasterIds = new HashSet<>(memberships.keySet());
         allMasterIds.addAll(metrics.stream().map(FundMetricDailyDO::getMasterId).toList());
+        Map<Long, FundMetricDailyDO> metricsByMasterId = metrics.stream()
+                .collect(Collectors.toMap(FundMetricDailyDO::getMasterId, Function.identity()));
 
         for (Long masterId : allMasterIds) {
             FundRankMembershipDO membership = memberships.computeIfAbsent(masterId,
                     id -> newMembership(id, category));
-            if (rankDate.equals(membership.getLastEvaluatedDate())) {
+            FundMetricDailyDO metric = metricsByMasterId.get(masterId);
+            LocalDate sourceMetricDate = metric == null ? null : metric.getSourceMetricDate();
+            if (sourceMetricDate == null || membership.getLastEvaluatedDate() != null
+                    && !sourceMetricDate.isAfter(membership.getLastEvaluatedDate())) {
                 continue;
             }
             boolean qualifies = rawTopIds.contains(masterId);
             if (qualifies) {
-                membership.setQualifyingStreak(membership.getQualifyingStreak() + 1);
+                membership.setQualifyingStreak(streak(membership.getQualifyingStreak()) + 1);
                 membership.setDisqualifyingStreak(0);
             } else {
                 membership.setQualifyingStreak(0);
-                membership.setDisqualifyingStreak(membership.getDisqualifyingStreak() + 1);
+                membership.setDisqualifyingStreak(streak(membership.getDisqualifyingStreak()) + 1);
             }
-            membership.setLastEvaluatedDate(rankDate);
+            membership.setLastEvaluatedDate(sourceMetricDate);
         }
 
         LocalDateTime now = LocalDateTime.now();
@@ -182,6 +187,10 @@ public class StableRankingService {
         membership.setQualifyingStreak(0);
         membership.setDisqualifyingStreak(0);
         return membership;
+    }
+
+    private int streak(Integer value) {
+        return value == null ? 0 : value;
     }
 
     private void activate(FundRankMembershipDO membership, LocalDateTime now) {

@@ -26,6 +26,9 @@ import java.util.concurrent.Executor;
 @Service
 public class ObservationSyncService {
     private static final Logger LOGGER = LoggerFactory.getLogger(ObservationSyncService.class);
+    private static final String FULL_SYNC = "FULL_SYNC";
+    private static final String RANKING = "RANKING";
+    private static final String RUNNING = "RUNNING";
 
     private final FundUniverseService universeService;
     private final FundQueryService fundQueryService;
@@ -55,11 +58,12 @@ public class ObservationSyncService {
     }
 
     public synchronized FundSyncJobVO startFullSync(String triggerType) {
+        recoverStaleRunningJobs();
         FundSyncJobDO running = findRunningJob();
         if (running != null) {
-            return toVO(running);
+            return resolveRunningJob(FULL_SYNC, running);
         }
-        FundSyncJobDO job = createJob("FULL_SYNC", triggerType);
+        FundSyncJobDO job = createJob(FULL_SYNC, triggerType);
         try {
             executor.execute(() -> executeFullSync(job.getId()));
         } catch (RuntimeException exception) {
@@ -69,22 +73,23 @@ public class ObservationSyncService {
         return toVO(job);
     }
 
-    public FundSyncJobVO runRetryIfNeeded(String triggerType) {
-        FundSyncJobDO latest = latestFullSyncJob();
-        if (latest != null && "SUCCESS".equals(latest.getStatus())
-                && latest.getCompletedAt() != null
-                && latest.getCompletedAt().toLocalDate().equals(LocalDate.now())) {
-            return toVO(latest);
-        }
-        return startFullSync(triggerType);
+    public FundSyncJobVO runEveningRetryIfNeeded(String triggerType) {
+        LocalDateTime now = LocalDateTime.now();
+        return retryIfNoAcceptableFullSync(now.toLocalDate().atTime(20, 0), now, triggerType);
+    }
+
+    public FundSyncJobVO runMorningCompensationIfNeeded(String triggerType) {
+        LocalDateTime now = LocalDateTime.now();
+        return retryIfNoAcceptableFullSync(now.toLocalDate().minusDays(1).atTime(20, 0), now, triggerType);
     }
 
     public synchronized FundSyncJobVO startRanking(String triggerType) {
+        recoverStaleRunningJobs();
         FundSyncJobDO running = findRunningJob();
         if (running != null) {
-            return toVO(running);
+            return resolveRunningJob(RANKING, running);
         }
-        FundSyncJobDO job = createJob("RANKING", triggerType);
+        FundSyncJobDO job = createJob(RANKING, triggerType);
         try {
             executor.execute(() -> executeRanking(job.getId()));
         } catch (RuntimeException exception) {
@@ -99,6 +104,26 @@ public class ObservationSyncService {
         return latest == null ? null : toVO(latest);
     }
 
+    public int recoverStaleRunningJobs() {
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime cutoff = now.minusMinutes(Math.max(1, properties.getJobTimeoutMinutes()));
+        List<FundSyncJobDO> staleJobs = jobMapper.selectList(new LambdaQueryWrapper<FundSyncJobDO>()
+                .eq(FundSyncJobDO::getStatus, RUNNING)
+                .and(wrapper -> wrapper.lt(FundSyncJobDO::getHeartbeatAt, cutoff)
+                        .or(nested -> nested.isNull(FundSyncJobDO::getHeartbeatAt)
+                                .lt(FundSyncJobDO::getStartedAt, cutoff))));
+        for (FundSyncJobDO staleJob : staleJobs) {
+            staleJob.setStatus("FAILED");
+            staleJob.setHeartbeatAt(now);
+            staleJob.setCompletedAt(now);
+            staleJob.setErrorMessage("任务心跳超时，应用已自动终止该任务");
+            jobMapper.updateById(staleJob);
+            LOGGER.warn("Recovered stale observation job, jobId={}, jobType={}",
+                    staleJob.getId(), staleJob.getJobType());
+        }
+        return staleJobs.size();
+    }
+
     private void executeFullSync(Long jobId) {
         FundSyncJobDO job = jobMapper.selectById(jobId);
         try {
@@ -106,6 +131,7 @@ public class ObservationSyncService {
             List<FundUniverseDO> universe = universeService.listActiveUniverse();
             Map<Long, FundMasterDO> masters = universeService.mastersById(universe);
             job.setTotalCount(universe.size());
+            job.setHeartbeatAt(LocalDateTime.now());
             jobMapper.updateById(job);
 
             int successCount = 0;
@@ -125,6 +151,9 @@ public class ObservationSyncService {
                     appendError(errors, master.getPrimaryFundCode(), exception);
                     LOGGER.warn("Observation fund sync failed, fundCode={}", master.getPrimaryFundCode(), exception);
                 }
+                if ((successCount + failedCount) % 10 == 0) {
+                    updateProgress(job, successCount, failedCount);
+                }
                 throttle();
             }
             job.setSuccessCount(successCount);
@@ -140,6 +169,7 @@ public class ObservationSyncService {
                     : failedCount > 0 || refreshResult.failedCategories() > 0
                     ? "PARTIAL_SUCCESS" : "SUCCESS");
             job.setCompletedAt(LocalDateTime.now());
+            job.setHeartbeatAt(job.getCompletedAt());
             jobMapper.updateById(job);
         } catch (Exception exception) {
             failJob(jobId, exception);
@@ -151,6 +181,7 @@ public class ObservationSyncService {
             LocalDate rankDate = LocalDate.now();
             Map<FundCategory, List<fundcopilot.observation.entity.FundMetricDailyDO>> metrics =
                     rankingService.calculate(rankDate);
+            touchJob(jobId);
             stableRankingService.publish(rankDate, metrics);
             boardService.evictCache();
             FundSyncJobDO job = jobMapper.selectById(jobId);
@@ -159,6 +190,7 @@ public class ObservationSyncService {
             job.setFailedCount(0);
             job.setStatus("SUCCESS");
             job.setCompletedAt(LocalDateTime.now());
+            job.setHeartbeatAt(job.getCompletedAt());
             jobMapper.updateById(job);
         } catch (Exception exception) {
             failJob(jobId, exception);
@@ -174,13 +206,14 @@ public class ObservationSyncService {
         job.setSuccessCount(0);
         job.setFailedCount(0);
         job.setStartedAt(LocalDateTime.now());
+        job.setHeartbeatAt(job.getStartedAt());
         try {
             jobMapper.insert(job);
             return job;
         } catch (DuplicateKeyException exception) {
             FundSyncJobDO running = findRunningJob();
             if (running != null) {
-                return running;
+                return resolveRunningJob(jobType, running, exception);
             }
             throw exception;
         }
@@ -188,20 +221,13 @@ public class ObservationSyncService {
 
     private FundSyncJobDO findRunningJob() {
         return jobMapper.selectOne(new LambdaQueryWrapper<FundSyncJobDO>()
-                .eq(FundSyncJobDO::getStatus, "RUNNING")
+                .eq(FundSyncJobDO::getStatus, RUNNING)
                 .orderByDesc(FundSyncJobDO::getStartedAt)
                 .last("limit 1"));
     }
 
     private FundSyncJobDO latestJob() {
         return jobMapper.selectOne(new LambdaQueryWrapper<FundSyncJobDO>()
-                .orderByDesc(FundSyncJobDO::getStartedAt)
-                .last("limit 1"));
-    }
-
-    private FundSyncJobDO latestFullSyncJob() {
-        return jobMapper.selectOne(new LambdaQueryWrapper<FundSyncJobDO>()
-                .eq(FundSyncJobDO::getJobType, "FULL_SYNC")
                 .orderByDesc(FundSyncJobDO::getStartedAt)
                 .last("limit 1"));
     }
@@ -214,8 +240,74 @@ public class ObservationSyncService {
         }
         job.setStatus("FAILED");
         job.setCompletedAt(LocalDateTime.now());
+        job.setHeartbeatAt(job.getCompletedAt());
         job.setErrorMessage(truncate(Objects.toString(exception.getMessage(), exception.toString()), 2000));
         jobMapper.updateById(job);
+    }
+
+    private FundSyncJobVO retryIfNoAcceptableFullSync(LocalDateTime from,
+                                                      LocalDateTime to,
+                                                      String triggerType) {
+        if (!to.isBefore(from)) {
+            FundSyncJobDO acceptable = jobMapper.selectList(new LambdaQueryWrapper<FundSyncJobDO>()
+                            .eq(FundSyncJobDO::getJobType, FULL_SYNC)
+                            .ge(FundSyncJobDO::getStartedAt, from)
+                            .le(FundSyncJobDO::getStartedAt, to)
+                            .in(FundSyncJobDO::getStatus, "SUCCESS", "PARTIAL_SUCCESS")
+                            .orderByDesc(FundSyncJobDO::getStartedAt))
+                    .stream()
+                    .filter(this::isAcceptableFullSync)
+                    .findFirst()
+                    .orElse(null);
+            if (acceptable != null) {
+                return toVO(acceptable);
+            }
+        }
+        return startFullSync(triggerType);
+    }
+
+    private boolean isAcceptableFullSync(FundSyncJobDO job) {
+        return "SUCCESS".equals(job.getStatus())
+                || "PARTIAL_SUCCESS".equals(job.getStatus())
+                && Objects.requireNonNullElse(job.getSuccessCount(), 0) > 0
+                && Objects.requireNonNullElse(job.getFailedCount(), 0) == 0;
+    }
+
+    private FundSyncJobVO resolveRunningJob(String requestedJobType, FundSyncJobDO running) {
+        if (requestedJobType.equals(running.getJobType())) {
+            return toVO(running);
+        }
+        throw new ObservationJobConflictException(jobTypeName(running.getJobType())
+                + "正在执行，暂不能启动" + jobTypeName(requestedJobType));
+    }
+
+    private FundSyncJobDO resolveRunningJob(String requestedJobType,
+                                            FundSyncJobDO running,
+                                            DuplicateKeyException cause) {
+        if (requestedJobType.equals(running.getJobType())) {
+            return running;
+        }
+        throw new ObservationJobConflictException(jobTypeName(running.getJobType())
+                + "正在执行，暂不能启动" + jobTypeName(requestedJobType));
+    }
+
+    private String jobTypeName(String jobType) {
+        return RANKING.equals(jobType) ? "观察榜排名任务" : "基金池同步任务";
+    }
+
+    private void updateProgress(FundSyncJobDO job, int successCount, int failedCount) {
+        job.setSuccessCount(successCount);
+        job.setFailedCount(failedCount);
+        job.setHeartbeatAt(LocalDateTime.now());
+        jobMapper.updateById(job);
+    }
+
+    private void touchJob(Long jobId) {
+        FundSyncJobDO job = jobMapper.selectById(jobId);
+        if (job != null) {
+            job.setHeartbeatAt(LocalDateTime.now());
+            jobMapper.updateById(job);
+        }
     }
 
     private void appendError(StringBuilder errors, String fundCode, Exception exception) {

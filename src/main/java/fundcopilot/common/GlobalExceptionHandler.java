@@ -1,6 +1,7 @@
 package fundcopilot.common;
 
 import jakarta.validation.ConstraintViolationException;
+import fundcopilot.observation.service.ObservationJobConflictException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -13,6 +14,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler({
             IllegalArgumentException.class,
+            ObservationJobConflictException.class,
             ConstraintViolationException.class,
             MethodArgumentNotValidException.class
     })

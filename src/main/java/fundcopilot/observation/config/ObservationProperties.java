@@ -11,6 +11,8 @@ public class ObservationProperties {
     private int exitStreakDays = 3;
     private int syncHistorySize = 320;
     private long syncIntervalMs = 300;
+    private int jobTimeoutMinutes = 120;
+    private boolean adminEndpointsEnabled = true;
 
     public int getUniverseSize() { return universeSize; }
     public void setUniverseSize(int universeSize) { this.universeSize = universeSize; }
@@ -26,4 +28,10 @@ public class ObservationProperties {
     public void setSyncHistorySize(int syncHistorySize) { this.syncHistorySize = syncHistorySize; }
     public long getSyncIntervalMs() { return syncIntervalMs; }
     public void setSyncIntervalMs(long syncIntervalMs) { this.syncIntervalMs = syncIntervalMs; }
+    public int getJobTimeoutMinutes() { return jobTimeoutMinutes; }
+    public void setJobTimeoutMinutes(int jobTimeoutMinutes) { this.jobTimeoutMinutes = jobTimeoutMinutes; }
+    public boolean isAdminEndpointsEnabled() { return adminEndpointsEnabled; }
+    public void setAdminEndpointsEnabled(boolean adminEndpointsEnabled) {
+        this.adminEndpointsEnabled = adminEndpointsEnabled;
+    }
 }

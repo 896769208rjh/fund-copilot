@@ -16,6 +16,7 @@ public class FundMetricDailyDO {
     private Long id;
     private Long masterId;
     private LocalDate metricDate;
+    private LocalDate sourceMetricDate;
     private BigDecimal oneMonthReturn;
     private BigDecimal threeMonthReturn;
     private BigDecimal sixMonthReturn;

@@ -23,6 +23,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -96,9 +97,12 @@ public class DeterministicRankingService {
                 }
                 metrics.add(upsertRawMetric(master, snapshots.get(master.getPrimaryFundCode()), calculationDate));
             }
-            scoreCategory(category, metrics);
+            LocalDate sourceMetricDate = selectPublicationSourceDate(metrics);
+            scoreCategory(category, metrics, sourceMetricDate);
             metrics.forEach(metricDailyMapper::updateById);
             metricsByCategory.put(category, metrics.stream()
+                    .filter(metric -> sourceMetricDate != null
+                            && sourceMetricDate.equals(metric.getSourceMetricDate()))
                     .sorted(Comparator.comparing(FundMetricDailyDO::getTotalScore,
                             Comparator.nullsLast(Comparator.reverseOrder())))
                     .toList());
@@ -118,6 +122,7 @@ public class DeterministicRankingService {
             metric.setMetricDate(calculationDate);
         }
         if (snapshot != null) {
+            metric.setSourceMetricDate(snapshot.getStatisticDate());
             metric.setOneMonthReturn(snapshot.getOneMonthReturn());
             metric.setThreeMonthReturn(snapshot.getThreeMonthReturn());
             metric.setSixMonthReturn(snapshot.getSixMonthReturn());
@@ -129,6 +134,7 @@ public class DeterministicRankingService {
                             .eq(FundNavDO::getFundCode, master.getPrimaryFundCode()))));
             metric.setReturnDrawdownRatio(ratio(snapshot.getSixMonthReturn(), snapshot.getMaxDrawdown()));
         } else {
+            metric.setSourceMetricDate(null);
             metric.setSampleSize(0);
         }
         metric.setEligible(isEligible(metric));
@@ -141,16 +147,37 @@ public class DeterministicRankingService {
     }
 
     private boolean isEligible(FundMetricDailyDO metric) {
-        return metric.getSampleSize() != null && metric.getSampleSize() >= MINIMUM_SAMPLE_SIZE
+        return metric.getSourceMetricDate() != null
+                && metric.getSampleSize() != null && metric.getSampleSize() >= MINIMUM_SAMPLE_SIZE
                 && metric.getSixMonthReturn() != null
                 && metric.getMaxDrawdown() != null
                 && metric.getVolatility() != null;
     }
 
-    private void scoreCategory(FundCategory category, List<FundMetricDailyDO> metrics) {
-        List<FundMetricDailyDO> eligible = metrics.stream().filter(FundMetricDailyDO::getEligible).toList();
+    private LocalDate selectPublicationSourceDate(List<FundMetricDailyDO> metrics) {
+        Map<LocalDate, Long> coverageByDate = new HashMap<>();
+        metrics.stream()
+                .filter(FundMetricDailyDO::getEligible)
+                .map(FundMetricDailyDO::getSourceMetricDate)
+                .filter(date -> date != null)
+                .forEach(date -> coverageByDate.merge(date, 1L, Long::sum));
+        return coverageByDate.entrySet().stream()
+                .max(Map.Entry.<LocalDate, Long>comparingByValue()
+                        .thenComparing(Map.Entry::getKey))
+                .map(Map.Entry::getKey)
+                .orElse(null);
+    }
+
+    private void scoreCategory(FundCategory category,
+                               List<FundMetricDailyDO> metrics,
+                               LocalDate sourceMetricDate) {
+        List<FundMetricDailyDO> eligible = metrics.stream()
+                .filter(FundMetricDailyDO::getEligible)
+                .filter(metric -> sourceMetricDate != null
+                        && sourceMetricDate.equals(metric.getSourceMetricDate()))
+                .toList();
         for (FundMetricDailyDO metric : metrics) {
-            if (!Boolean.TRUE.equals(metric.getEligible())) {
+            if (!eligible.contains(metric)) {
                 clearScores(metric);
                 continue;
             }

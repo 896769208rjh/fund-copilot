@@ -145,6 +145,6 @@ public class ObservationBoardService {
                 master.getFundName(), master.getLatestScale(), metric.getOneMonthReturn(),
                 metric.getThreeMonthReturn(), metric.getSixMonthReturn(), metric.getOneYearReturn(),
                 metric.getMaxDrawdown(), metric.getVolatility(), rank.getTotalScore(), status,
-                metric.getMetricDate());
+                metric.getSourceMetricDate());
     }
 }

@@ -103,6 +103,7 @@ CREATE TABLE IF NOT EXISTS fund_metric_daily (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     master_id BIGINT NOT NULL,
     metric_date DATE NOT NULL,
+    source_metric_date DATE,
     one_month_return DECIMAL(18, 6),
     three_month_return DECIMAL(18, 6),
     six_month_return DECIMAL(18, 6),
@@ -151,7 +152,7 @@ CREATE TABLE IF NOT EXISTS fund_rank_daily (
     visible BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY uk_fund_rank_daily (master_id, rank_date),
+    UNIQUE KEY uk_fund_rank_daily (master_id, fund_category, rank_date),
     KEY idx_fund_rank_daily_published (fund_category, rank_date, visible, published_rank)
 );
 
@@ -164,12 +165,13 @@ CREATE TABLE IF NOT EXISTS fund_sync_job (
     success_count INT NOT NULL DEFAULT 0,
     failed_count INT NOT NULL DEFAULT 0,
     started_at TIMESTAMP NOT NULL,
+    heartbeat_at TIMESTAMP NOT NULL,
     completed_at TIMESTAMP,
     error_message VARCHAR(2048),
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     KEY idx_fund_sync_job_started (started_at),
-    KEY idx_fund_sync_job_status (status)
+    KEY idx_fund_sync_job_status_heartbeat (status, heartbeat_at)
 );
 
 CREATE TABLE IF NOT EXISTS agent_run_log (

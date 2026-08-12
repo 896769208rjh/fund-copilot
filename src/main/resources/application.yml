@@ -54,6 +54,8 @@ fund-copilot:
     exit-streak-days: ${FUND_OBSERVATION_EXIT_DAYS:3}
     sync-history-size: ${FUND_OBSERVATION_HISTORY_SIZE:320}
     sync-interval-ms: ${FUND_OBSERVATION_SYNC_INTERVAL_MS:300}
+    job-timeout-minutes: ${FUND_OBSERVATION_JOB_TIMEOUT_MINUTES:120}
+    admin-endpoints-enabled: ${FUND_OBSERVATION_ADMIN_ENABLED:true}
     schedule:
       primary-sync: ${FUND_OBSERVATION_PRIMARY_SYNC:0 0 20 * * *}
       retry-sync: ${FUND_OBSERVATION_RETRY_SYNC:0 30 22 * * *}
