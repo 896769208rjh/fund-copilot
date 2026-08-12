@@ -39,6 +39,22 @@ public final class MarketDataDtos {
     ) {
     }
 
+    public record MarketFundUniverseItem(
+            String fundCode,
+            String fundName,
+            String fundType,
+            String fundCompany,
+            String fundManager,
+            BigDecimal scaleInBillions,
+            BigDecimal oneMonthReturn,
+            BigDecimal threeMonthReturn,
+            BigDecimal sixMonthReturn,
+            BigDecimal oneYearReturn,
+            LocalDate latestNavDate,
+            String sourceUrl
+    ) {
+    }
+
     public record MarketNavPoint(
             LocalDate navDate,
             BigDecimal unitNav,

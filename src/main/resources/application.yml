@@ -46,6 +46,19 @@ fund-copilot:
       nav-history-size: 320
       request-interval-ms: 300
       demo-fallback-enabled: ${FUND_MARKET_DEMO_FALLBACK_ENABLED:true}
+  observation:
+    universe-size: ${FUND_OBSERVATION_UNIVERSE_SIZE:100}
+    universe-candidate-size: ${FUND_OBSERVATION_CANDIDATE_SIZE:300}
+    ranking-size: ${FUND_OBSERVATION_RANKING_SIZE:10}
+    entry-streak-days: ${FUND_OBSERVATION_ENTRY_DAYS:3}
+    exit-streak-days: ${FUND_OBSERVATION_EXIT_DAYS:3}
+    sync-history-size: ${FUND_OBSERVATION_HISTORY_SIZE:320}
+    sync-interval-ms: ${FUND_OBSERVATION_SYNC_INTERVAL_MS:300}
+    schedule:
+      primary-sync: ${FUND_OBSERVATION_PRIMARY_SYNC:0 0 20 * * *}
+      retry-sync: ${FUND_OBSERVATION_RETRY_SYNC:0 30 22 * * *}
+      compensation-sync: ${FUND_OBSERVATION_COMPENSATION_SYNC:0 0 8 * * *}
+      ranking: ${FUND_OBSERVATION_RANKING_CRON:0 30 8 * * *}
   agent:
     base-url: ${FUND_OPENAI_BASE_URL:}
     api-key: ${FUND_OPENAI_API_KEY:}

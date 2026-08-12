@@ -24,3 +24,10 @@ export type {
   FundNavPoint,
   FundSearchItem,
 } from './fund'
+export type {
+  FundCategory,
+  FundSyncJob,
+  ObservationBoard,
+  ObservationCategory,
+  ObservationFund,
+} from './observation'

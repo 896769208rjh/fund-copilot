@@ -35,3 +35,47 @@ INSERT INTO alipay_fund_pool (fund_code, display_tag, focus, remark) VALUES
 ('000001', '支付宝常见混合基金', TRUE, '用于 Fund Copilot V1 演示'),
 ('110022', '消费主题', TRUE, '用于行业主题基金分析演示'),
 ('161725', '白酒指数', TRUE, '用于高波动指数基金分析演示');
+
+INSERT INTO fund_master (
+    identity_key, primary_fund_code, fund_name, fund_category, fund_company, fund_manager,
+    latest_scale, scale_date, source_url, active
+) VALUES
+('demo|active_equity|110022', '110022', '易方达消费行业股票', 'ACTIVE_EQUITY', '易方达基金', '演示基金经理', 186.4200, DATE '2026-07-07', 'https://fund.eastmoney.com/110022.html', TRUE),
+('demo|equity_hybrid|000001', '000001', '华夏成长混合', 'EQUITY_HYBRID', '华夏基金', '演示基金经理', 72.3600, DATE '2026-07-07', 'https://fund.eastmoney.com/000001.html', TRUE),
+('demo|bond|000013', '000013', '易方达天天理财债券', 'BOND', '易方达基金', '演示基金经理', 118.2400, DATE '2026-07-07', 'https://fund.eastmoney.com/000013.html', TRUE),
+('demo|index|161725', '161725', '招商中证白酒指数', 'INDEX', '招商基金', '演示基金经理', 412.6800, DATE '2026-07-07', 'https://fund.eastmoney.com/161725.html', TRUE);
+
+INSERT INTO fund_share_class (master_id, fund_code, share_class, primary_share)
+SELECT id, primary_fund_code, 'A', TRUE FROM fund_master;
+
+INSERT INTO fund_universe (master_id, fund_category, scale_rank, selected_date, active)
+SELECT id, fund_category, 1, DATE '2026-07-07', TRUE FROM fund_master;
+
+INSERT INTO fund_metric_daily (
+    master_id, metric_date, one_month_return, three_month_return, six_month_return,
+    one_year_return, max_drawdown, volatility, return_drawdown_ratio, sample_size,
+    performance_score, drawdown_score, volatility_score, ratio_score, data_quality_score,
+    total_score, eligible
+)
+SELECT id, DATE '2026-07-07',
+       CASE fund_category WHEN 'BOND' THEN 0.82 ELSE 4.22 END,
+       CASE fund_category WHEN 'BOND' THEN 2.31 ELSE 8.45 END,
+       CASE fund_category WHEN 'BOND' THEN 3.76 ELSE 9.31 END,
+       CASE fund_category WHEN 'BOND' THEN 6.18 ELSE 18.76 END,
+       CASE fund_category WHEN 'BOND' THEN -1.82 ELSE -18.42 END,
+       CASE fund_category WHEN 'BOND' THEN 2.64 ELSE 24.36 END,
+       CASE fund_category WHEN 'BOND' THEN 2.07 ELSE 0.51 END,
+       253, 100.00, 100.00, 100.00, 100.00, 79.06, 98.95, TRUE
+FROM fund_master;
+
+INSERT INTO fund_rank_membership (
+    master_id, fund_category, active, qualifying_streak, disqualifying_streak,
+    last_evaluated_date, entered_at
+)
+SELECT id, fund_category, TRUE, 3, 0, DATE '2026-07-07', TIMESTAMP '2026-07-07 08:30:00'
+FROM fund_master;
+
+INSERT INTO fund_rank_daily (
+    master_id, fund_category, rank_date, raw_rank, published_rank, total_score, visible
+)
+SELECT id, fund_category, DATE '2026-07-07', 1, 1, 98.95, TRUE FROM fund_master;

@@ -1,6 +1,6 @@
 import type { AgentThinkingMode } from '@/types'
 
-export type WorkspaceModule = 'overview' | 'compare' | 'agent'
+export type WorkspaceModule = 'home' | 'overview' | 'compare' | 'agent'
 
 export interface WorkspaceModuleMeta {
   title: string
@@ -13,6 +13,10 @@ export const DEFAULT_COMPARE_CODES = ['000001', '110022', '161725'] as const
 export const MAX_COMPARE_FUNDS = 6
 
 export const WORKSPACE_MODULE_META: Readonly<Record<WorkspaceModule, WorkspaceModuleMeta>> = {
+  home: {
+    title: '近期表现观察榜',
+    subtitle: '四类主流基金的客观指标排序，不构成买入推荐',
+  },
   overview: {
     title: '基金概览',
     subtitle: '查看基金详情、净值走势、核心指标和风险提示',
@@ -37,5 +41,5 @@ export const AGENT_THINKING_MODE_OPTIONS: Array<{
 ]
 
 export function isWorkspaceModule(value: string): value is WorkspaceModule {
-  return value === 'overview' || value === 'compare' || value === 'agent'
+  return value === 'home' || value === 'overview' || value === 'compare' || value === 'agent'
 }

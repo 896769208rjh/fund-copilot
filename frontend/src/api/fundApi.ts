@@ -8,6 +8,8 @@ import type {
   FundDetail,
   FundNavPoint,
   FundSearchItem,
+  FundSyncJob,
+  ObservationBoard,
 } from '@/types'
 import { httpClient } from './httpClient'
 
@@ -48,6 +50,18 @@ export const fundApi = {
 
   alipayFundPool(): Promise<FundSearchItem[]> {
     return httpClient.request<FundSearchItem[]>('/alipay/fund-pool')
+  },
+
+  observationBoard(): Promise<ObservationBoard> {
+    return httpClient.request<ObservationBoard>('/observations')
+  },
+
+  syncObservationUniverse(): Promise<FundSyncJob> {
+    return httpClient.request<FundSyncJob>('/admin/observations/sync', { method: 'POST' })
+  },
+
+  latestObservationJob(): Promise<FundSyncJob | null> {
+    return httpClient.request<FundSyncJob | null>('/admin/observations/sync-jobs/latest')
   },
 
   analyzeWithAgent(requestBody: FundAnalysisRequest): Promise<AgentAnalysisResponse> {

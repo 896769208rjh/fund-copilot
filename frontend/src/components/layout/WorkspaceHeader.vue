@@ -5,6 +5,7 @@ defineProps<{
   title: string
   subtitle: string
   isSyncing: boolean
+  showActions?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -20,7 +21,7 @@ const emit = defineEmits<{
       <h2>{{ title }}</h2>
       <p>{{ subtitle }}</p>
     </div>
-    <div class="workspace-actions">
+    <div v-if="showActions !== false" class="workspace-actions">
       <el-button :icon="Refresh" :loading="isSyncing" @click="emit('syncFund')">
         同步东方财富
       </el-button>

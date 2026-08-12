@@ -231,6 +231,25 @@ public class FundQueryService {
     public FundDetailVO syncFund(String fundCode) {
         String safeFundCode = normalizeFundCode(fundCode);
         MarketFundSnapshot snapshot = fundDataProvider.fetchSnapshot(safeFundCode);
+        return persistSnapshot(safeFundCode, snapshot);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public FundDetailVO syncFund(String fundCode, int historySize) {
+        String safeFundCode = normalizeFundCode(fundCode);
+        MarketFundSnapshot snapshot = fundDataProvider.fetchSnapshot(safeFundCode, historySize);
+        return persistSnapshot(safeFundCode, snapshot);
+    }
+
+    public FundDetailVO syncFundIncrementally(String fundCode, int bootstrapHistorySize) {
+        String safeFundCode = normalizeFundCode(fundCode);
+        long existingNavCount = fundNavMapper.selectCount(new LambdaQueryWrapper<FundNavDO>()
+                .eq(FundNavDO::getFundCode, safeFundCode));
+        int historySize = existingNavCount >= 253 ? 40 : bootstrapHistorySize;
+        return syncFund(safeFundCode, historySize);
+    }
+
+    private FundDetailVO persistSnapshot(String safeFundCode, MarketFundSnapshot snapshot) {
         FundProfileDO profileDO = upsertProfile(snapshot);
         upsertNavPoints(safeFundCode, snapshot.navPoints());
 

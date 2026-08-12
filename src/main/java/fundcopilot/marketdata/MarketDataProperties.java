@@ -11,6 +11,7 @@ public class MarketDataProperties {
     private boolean demoFallbackEnabled = true;
     private String searchBaseUrl = "https://fundsuggest.eastmoney.com";
     private String navBaseUrl = "https://api.fund.eastmoney.com";
+    private String rankBaseUrl = "https://fundmobapi.eastmoney.com";
 
     public int getTimeoutSeconds() { return timeoutSeconds; }
     public void setTimeoutSeconds(int timeoutSeconds) { this.timeoutSeconds = timeoutSeconds; }
@@ -26,4 +27,6 @@ public class MarketDataProperties {
     public void setSearchBaseUrl(String searchBaseUrl) { this.searchBaseUrl = searchBaseUrl; }
     public String getNavBaseUrl() { return navBaseUrl; }
     public void setNavBaseUrl(String navBaseUrl) { this.navBaseUrl = navBaseUrl; }
+    public String getRankBaseUrl() { return rankBaseUrl; }
+    public void setRankBaseUrl(String rankBaseUrl) { this.rankBaseUrl = rankBaseUrl; }
 }

@@ -197,6 +197,8 @@ h3 {
 
 .search-block,
 .pool-block,
+.observation-toolbar,
+.observation-category,
 .workspace-header,
 .fund-hero,
 .snapshot-item,
@@ -216,6 +218,235 @@ h3 {
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.98);
   box-shadow: var(--shadow-soft);
+}
+
+.observation-page {
+  max-width: 1540px;
+}
+
+.observation-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 16px 18px;
+}
+
+.observation-method {
+  display: grid;
+  flex: 1 1 auto;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.observation-method > svg {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  color: var(--color-accent);
+}
+
+.observation-method strong,
+.observation-sync strong {
+  display: block;
+  color: var(--color-heading);
+  font-size: 14px;
+}
+
+.observation-method p {
+  margin: 5px 0 0;
+  color: var(--color-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.observation-sync {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 14px;
+}
+
+.observation-sync > div {
+  text-align: right;
+}
+
+.observation-sync span {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--color-muted);
+  font-size: 11px;
+}
+
+.observation-category {
+  overflow: hidden;
+}
+
+.observation-category-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--color-border);
+  background: #f8fafc;
+}
+
+.observation-category-header h3 {
+  font-size: 17px;
+}
+
+.observation-category-header p {
+  margin: 5px 0 0;
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.observation-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.observation-table {
+  width: 100%;
+  min-width: 1240px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.observation-table th,
+.observation-table td {
+  padding: 12px 10px;
+  border-bottom: 1px solid #e7edf3;
+  color: #33475b;
+  text-align: right;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.observation-table th {
+  color: #607286;
+  background: #ffffff;
+  font-weight: 850;
+}
+
+.observation-table th:first-child,
+.observation-table td:first-child {
+  width: 56px;
+  text-align: center;
+}
+
+.observation-table th:nth-child(2),
+.observation-table td:nth-child(2) {
+  width: 184px;
+  text-align: left;
+}
+
+.observation-table th:nth-child(3) {
+  width: 94px;
+}
+
+.observation-table th:nth-last-child(2) {
+  width: 92px;
+}
+
+.observation-table th:last-child,
+.observation-table td:last-child {
+  width: 48px;
+  text-align: center;
+}
+
+.observation-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.observation-table tbody tr:hover {
+  background: #f8fbfc;
+}
+
+.rank-number {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 6px;
+  color: #0f5f57;
+  background: var(--color-accent-soft);
+}
+
+.fund-name-button {
+  display: grid;
+  gap: 3px;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  color: var(--color-heading);
+  background: transparent;
+  text-align: left;
+}
+
+.fund-name-button strong,
+.fund-name-button small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fund-name-button small {
+  color: var(--color-muted);
+  font-size: 11px;
+}
+
+.observation-table .positive {
+  color: #b42335;
+  font-weight: 800;
+}
+
+.observation-table .negative {
+  color: #0f766e;
+  font-weight: 800;
+}
+
+.observation-table .neutral {
+  color: var(--color-muted);
+}
+
+.observation-expand-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 38px;
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  color: #426174;
+  background: #fbfcfd;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.observation-expand-button:hover,
+.observation-expand-button:focus-visible {
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+  outline: none;
+}
+
+.observation-expand-button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.observation-disclaimer {
+  padding: 12px 16px;
+  border-left: 3px solid var(--color-warning);
+  color: #72551c;
+  background: #fffaf0;
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .search-block,

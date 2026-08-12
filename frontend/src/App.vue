@@ -7,6 +7,7 @@ import { useWorkspaceNavigation } from '@/composables/useWorkspaceNavigation'
 import AgentAnalysisView from '@/views/AgentAnalysisView.vue'
 import FundCompareView from '@/views/FundCompareView.vue'
 import FundOverviewView from '@/views/FundOverviewView.vue'
+import FundObservationView from '@/views/FundObservationView.vue'
 
 const isInitialized = ref(false)
 
@@ -38,6 +39,11 @@ onMounted(async () => {
     isInitialized.value = true
   }
 })
+
+async function openFundFromObservation(fundCode: string): Promise<void> {
+  await selectFund(fundCode)
+  setActiveModule('overview')
+}
 </script>
 
 <template>
@@ -62,12 +68,15 @@ onMounted(async () => {
           :title="activeModuleMeta.title"
           :subtitle="activeModuleMeta.subtitle"
           :is-syncing="loading.sync"
+          :show-actions="activeModule !== 'home'"
           @open-agent="setActiveModule('agent')"
           @sync-fund="syncCurrentFund"
         />
 
+        <FundObservationView v-if="activeModule === 'home'" @open-fund="openFundFromObservation" />
+
         <FundOverviewView
-          v-if="activeModule === 'overview'"
+          v-else-if="activeModule === 'overview'"
           :fund-code="selectedFundCode"
           :detail="detail"
           :nav-points="navPoints"

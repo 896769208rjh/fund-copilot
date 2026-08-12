@@ -7,11 +7,11 @@ import {
 
 function moduleFromLocation(): WorkspaceModule {
   const moduleName = window.location.hash.replace(/^#\/?/, '')
-  return isWorkspaceModule(moduleName) ? moduleName : 'overview'
+  return isWorkspaceModule(moduleName) ? moduleName : 'home'
 }
 
 export function useWorkspaceNavigation() {
-  const activeModule = ref<WorkspaceModule>('overview')
+  const activeModule = ref<WorkspaceModule>('home')
   const activeModuleMeta = computed(() => WORKSPACE_MODULE_META[activeModule.value])
 
   function syncModuleFromLocation(): void {

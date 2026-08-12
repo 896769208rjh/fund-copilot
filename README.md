@@ -22,6 +22,10 @@ Fund Copilot 是一个面向基金业务场景的智能客服与基金分析工�
 - 前端基于 Vue 3、Vite、TypeScript、Element Plus、ECharts。
 - 默认使用 H2 演示数据库，提供 MySQL/Redis 可选配置。
 - 已实现基金搜索、详情、历史净值、指标分析、手动同步接口。
+- 已新增“公开近期表现观察榜”首页：主动股票型、偏股混合型、债券型、指数型四类同时展示，每类基金池按合并份额后的基金规模选取约 100 只。
+- 观察榜使用确定性指标而非 LLM 排名：同类内比较周期收益、最大回撤、波动率、收益回撤比和数据质量，每类发布 Top 10。
+- 已实现榜单稳定机制：首次允许直接建榜，后续连续满足 3 个不同日期才进入、连续不满足 3 个不同日期才退出；同日重复执行不会累计连续天数。
+- 已实现 20:00 主同步、22:30 失败重试、次日 08:00 补偿和 08:30 排名任务，以及管理员手动全量同步和任务状态查询。
 - 已实现本地基金搜索 + 东方财富远程搜索，支持按基金代码、名称或简拼搜索。
 - 已实现东方财富/天天基金公开数据 Provider，支持分页同步最多 320 条有效净值、连接/读取超时和请求间隔控制。
 - H2 演示环境允许显式使用本地演示兜底数据；MySQL profile 默认关闭演示兜底，远程数据不可用时返回明确错误，避免虚构数据混入持久化环境。
@@ -92,6 +96,7 @@ fund-copilot
 │   ├── common                # 通用响应与异常处理
 │   ├── compliance            # 合规检查与免责声明
 │   ├── fund                  # 基金领域模型、接口、服务
+│   ├── observation           # 基金主数据、规模池、指标和稳定观察榜
 │   └── marketdata            # 东方财富数据采集 Provider
 ├── src/main/resources
 │   ├── application.yml       # 默认 H2 演示配置
@@ -164,6 +169,38 @@ src/main/resources/sql/upgrade-v2.8-agent-thinking-mode.sql
 src/main/resources/sql/upgrade-v2.9-agent-graph-observability.sql
 ```
 
+需要增加四类基金池和公开观察榜时，执行：
+
+```bash
+src/main/resources/sql/upgrade-v3.0-fund-observation-ranking.sql
+```
+
+该脚本只创建新表。应用不会在 MySQL profile 下自动执行迁移，需由数据库管理员手动执行。
+
+## 公开近期表现观察榜
+
+- 基金池：主动股票型、偏股混合型、债券型、指数型，每类按基金规模选约 100 个基金主体；可识别的 A/C 等份额会合并规模并只选择一个主份额参与排名。
+- 评分：完全由已落库净值计算，不调用 LLM。主动股票/偏股混合、债券、指数分别使用类别化权重。
+- 样本门槛：至少 133 条有效净值并具备近 6 月收益、最大回撤和波动率才可参与排名。
+- 稳定规则：当日原始 Top 10 为满足条件；连续 3 日才进入，已在榜基金连续 3 日不满足才退出。首次建榜为避免空榜可直接发布当日 Top 10。
+- 失败语义：上游某类数据暂不可用时保留原基金池；单只基金同步失败不会中断整批；发布失败时公开接口继续读取最近成功榜单。
+- 合规边界：榜单只说明客观历史指标和排序，不回答“应该买哪只”，不构成投资建议。
+
+管理员接口：
+
+```text
+POST /api/admin/observations/sync
+POST /api/admin/observations/rank
+GET  /api/admin/observations/sync-jobs/latest
+```
+
+公开接口：
+
+```text
+GET /api/observations
+GET /api/observations/{ACTIVE_EQUITY|EQUITY_HYBRID|BOND|INDEX}
+```
+
 ## 市场数据与样本配置
 
 默认市场数据配置如下：
@@ -177,6 +214,13 @@ fund-copilot:
       nav-history-size: 320
       request-interval-ms: 300
       demo-fallback-enabled: true
+  observation:
+    universe-size: 100
+    universe-candidate-size: 300
+    ranking-size: 10
+    entry-streak-days: 3
+    exit-streak-days: 3
+    sync-history-size: 320
 ```
 
 - `nav-page-size`：东方财富单页请求数量。当前公开接口实际会限制为 20 条。
@@ -237,6 +281,7 @@ npm run build
 
 V2 完善：
 
+- 增加基金池数据源切换、同步失败告警、规模日期核验和榜单回测监控。
 - 将内存任务执行器和 SSE 通道升级为可选的 Redis Stream / 消息队列方案，支持多实例部署。
 - 增加事件归档、任务并发配额、模型调用限流、成本核算和超时分类。
 - 为东方财富 Provider 增加更完整的 fixture 测试和数据源失败降级测试。

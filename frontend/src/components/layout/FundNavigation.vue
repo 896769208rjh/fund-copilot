@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, type Component } from 'vue'
-import { Cpu, DataLine, Refresh, Search, TrendCharts } from '@element-plus/icons-vue'
+import { Cpu, DataLine, Histogram, Refresh, Search, TrendCharts } from '@element-plus/icons-vue'
 import type { WorkspaceModule } from '@/constants/workbench'
 import type { FundSearchItem } from '@/types'
 import { isSixDigitFundCode } from '@/utils/fundFormatters'
@@ -30,6 +30,7 @@ const emit = defineEmits<{
 const searchKeyword = defineModel<string>('searchKeyword', { required: true })
 
 const moduleItems: readonly ModuleNavigationItem[] = [
+  { module: 'home', label: '近期观察榜', icon: Histogram },
   { module: 'overview', label: '基金概览', icon: TrendCharts },
   { module: 'compare', label: '多基金对比', icon: DataLine },
   { module: 'agent', label: 'Agent 分析', icon: Cpu },

@@ -22,6 +22,10 @@ Implemented capabilities:
 - Frontend built with Vue 3, Vite, TypeScript, Element Plus, and ECharts.
 - H2 is used by default for local demos, with optional MySQL and Redis configurations.
 - Fund search, details, historical NAV, metric analysis, and manual synchronization APIs.
+- A public recent-performance observation board covering active equity, equity-heavy hybrid, bond, and index funds. Each category uses roughly 100 mainstream fund entities selected by combined share-class scale.
+- Deterministic, non-LLM ranking by category-relative return, drawdown, volatility, return-to-drawdown ratio, and data quality, publishing up to 10 funds per category.
+- Stable membership rules: the initial board may be seeded directly; subsequent entry and exit require three distinct consecutive evaluation dates. Re-running on the same date is idempotent.
+- Scheduled primary synchronization at 20:00, retry at 22:30, next-day compensation at 08:00, ranking at 08:30, plus manual administrator synchronization and job status APIs.
 - Local and Eastmoney remote search by fund code, name, or name abbreviation.
 - Eastmoney and Tiantian Fund public data providers with paginated synchronization of up to 320 valid NAV records, connection/read timeouts, and request throttling.
 - The H2 demo profile explicitly allows local demo fallback data. The MySQL profile disables demo fallback by default and reports remote-data failures instead of persisting fabricated data.
@@ -92,6 +96,7 @@ fund-copilot
 │   ├── common                # Shared responses and exception handling
 │   ├── compliance            # Compliance checks and disclaimers
 │   ├── fund                  # Fund domain models, APIs, and services
+│   ├── observation           # Master data, scale universe, metrics, and stable board
 │   └── marketdata            # Eastmoney market data providers
 ├── src/main/resources
 │   ├── application.yml       # Default H2 demo configuration
@@ -164,6 +169,38 @@ To add state-graph model call telemetry, run:
 src/main/resources/sql/upgrade-v2.9-agent-graph-observability.sql
 ```
 
+To add the four fund universes and public observation board, run:
+
+```bash
+src/main/resources/sql/upgrade-v3.0-fund-observation-ranking.sql
+```
+
+This migration only creates new tables. The MySQL profile never runs it automatically; a database administrator must execute it manually.
+
+## Public Recent-Performance Observation Board
+
+- Universe: active equity, equity-heavy hybrid, bond, and index funds, with roughly 100 fund entities per category selected by scale. Recognizable A/C share classes are grouped and one primary share participates in ranking.
+- Scoring: computed only from persisted NAV facts without LLM involvement. Category-specific weights are used for equity/hybrid, bond, and index funds.
+- Eligibility: at least 133 valid NAV points plus 6-month return, maximum drawdown, and volatility are required.
+- Stability: the raw daily Top 10 qualifies. Entry requires three qualifying dates and exit requires three disqualifying dates. The first publication may seed the current Top 10 to avoid an empty board.
+- Failure semantics: a failed upstream category retains its previous universe; one failed fund does not abort the batch; public reads continue using the latest successfully published board.
+- Compliance: this is an objective historical observation list, not a recommendation or an answer to which fund should be bought.
+
+Administrator APIs:
+
+```text
+POST /api/admin/observations/sync
+POST /api/admin/observations/rank
+GET  /api/admin/observations/sync-jobs/latest
+```
+
+Public APIs:
+
+```text
+GET /api/observations
+GET /api/observations/{ACTIVE_EQUITY|EQUITY_HYBRID|BOND|INDEX}
+```
+
 ## Market Data and Sample Configuration
 
 The default market-data configuration is:
@@ -177,6 +214,13 @@ fund-copilot:
       nav-history-size: 320
       request-interval-ms: 300
       demo-fallback-enabled: true
+  observation:
+    universe-size: 100
+    universe-candidate-size: 300
+    ranking-size: 10
+    entry-streak-days: 3
+    exit-streak-days: 3
+    sync-history-size: 320
 ```
 
 - `nav-page-size`: requested Eastmoney page size. The current public endpoint effectively caps a page at 20 records.
@@ -237,6 +281,7 @@ npm run build
 
 V2 completion:
 
+- Add market-data source switching, synchronization failure alerts, scale-date validation, and ranking backtest monitoring.
 - Add optional Redis Streams or message queue execution for multi-instance deployments.
 - Add event archiving, per-user task quotas, model rate limiting, cost accounting, and timeout classification.
 - Expand fixture and data-source failure tests for the Eastmoney provider.

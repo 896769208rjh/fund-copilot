@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import fundcopilot.fund.constant.FundConstants;
 import fundcopilot.marketdata.MarketDataDtos.MarketFundSnapshot;
 import fundcopilot.marketdata.MarketDataDtos.MarketFundSearchItem;
+import fundcopilot.marketdata.MarketDataDtos.MarketFundUniverseItem;
 import fundcopilot.marketdata.MarketDataDtos.MarketNavPoint;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,6 +34,7 @@ public class EastmoneyFundDataProvider implements FundDataProvider {
     private static final String DEFAULT_RISK_LEVEL = "请以基金销售平台风险等级为准";
     private static final int SEARCH_LIMIT = 20;
     private static final int MAX_NAV_PAGE_COUNT = 100;
+    private static final int RANK_PAGE_SIZE = 30;
 
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
@@ -53,6 +55,15 @@ public class EastmoneyFundDataProvider implements FundDataProvider {
 
     @Override
     public MarketFundSnapshot fetchSnapshot(String fundCode) {
+        return fetchSnapshot(fundCode, properties.getNavHistorySize(), properties.isDemoFallbackEnabled());
+    }
+
+    @Override
+    public MarketFundSnapshot fetchSnapshot(String fundCode, int historySize) {
+        return fetchSnapshot(fundCode, historySize, false);
+    }
+
+    private MarketFundSnapshot fetchSnapshot(String fundCode, int historySize, boolean allowDemoFallback) {
         try {
             throttle();
             MarketFundSearchItem searchItem = searchFunds(fundCode)
@@ -60,7 +71,7 @@ public class EastmoneyFundDataProvider implements FundDataProvider {
                     .filter(item -> fundCode.equals(item.fundCode()))
                     .findFirst()
                     .orElse(null);
-            List<MarketNavPoint> navPoints = fetchNavPoints(fundCode);
+            List<MarketNavPoint> navPoints = fetchNavPoints(fundCode, historySize);
             MarketNavPoint latest = navPoints.isEmpty() ? null : navPoints.get(0);
             return new MarketFundSnapshot(
                     fundCode,
@@ -79,7 +90,7 @@ public class EastmoneyFundDataProvider implements FundDataProvider {
                     navPoints
             );
         } catch (Exception exception) {
-            if (properties.isDemoFallbackEnabled()) {
+            if (allowDemoFallback) {
                 LOGGER.warn("Fetch eastmoney fund data failed, using demo fallback, fundCode={}",
                         fundCode, exception);
                 return fallbackSnapshot(fundCode);
@@ -129,9 +140,58 @@ public class EastmoneyFundDataProvider implements FundDataProvider {
         }
     }
 
-    private List<MarketNavPoint> fetchNavPoints(String fundCode) throws Exception {
+    @Override
+    public List<MarketFundUniverseItem> fetchFundsByScale(String fundType, int limit) {
+        if (fundType == null || fundType.isBlank() || limit <= 0) {
+            return List.of();
+        }
+
+        try {
+            List<MarketFundUniverseItem> result = new ArrayList<>();
+            for (int pageIndex = 1; result.size() < limit; pageIndex++) {
+                throttle();
+                String response = restClient.get()
+                        .uri(properties.getRankBaseUrl()
+                                        + "/FundMNewApi/FundMNRank?appType=ttjj&Sort=desc&product=EFund"
+                                        + "&version=6.3.1&DataConstraintType=0&onFundCache=3&FundType={fundType}"
+                                        + "&BUY=false&pageIndex={pageIndex}&pageSize={pageSize}&SortColumn=ENDNAV"
+                                        + "&plat=Android&ISABNORMAL=true",
+                                fundType, pageIndex, RANK_PAGE_SIZE)
+                        .retrieve()
+                        .body(String.class);
+                JsonNode root = objectMapper.readTree(response);
+                if (!root.path("Success").asBoolean(false)) {
+                    throw new IllegalStateException("东方财富基金排行返回失败: "
+                            + root.path("ErrCode").asText() + " " + root.path("ErrMsg").asText());
+                }
+                JsonNode dataList = root.path("Datas");
+                if (!dataList.isArray() || dataList.isEmpty()) {
+                    break;
+                }
+                for (JsonNode item : dataList) {
+                    MarketFundUniverseItem fund = toUniverseItem(item);
+                    if (fund != null) {
+                        result.add(fund);
+                    }
+                    if (result.size() >= limit) {
+                        break;
+                    }
+                }
+                int totalCount = root.path("TotalCount").asInt(0);
+                if (dataList.size() < RANK_PAGE_SIZE || totalCount > 0 && result.size() >= totalCount) {
+                    break;
+                }
+            }
+            return result;
+        } catch (Exception exception) {
+            LOGGER.warn("Fetch eastmoney fund universe failed, fundType={}", fundType, exception);
+            throw new MarketDataUnavailableException("东方财富基金规模排行暂时不可用: " + fundType, exception);
+        }
+    }
+
+    private List<MarketNavPoint> fetchNavPoints(String fundCode, int requestedHistorySize) throws Exception {
         int pageSize = Math.max(1, properties.getNavPageSize());
-        int historySize = Math.max(pageSize, properties.getNavHistorySize());
+        int historySize = Math.max(pageSize, requestedHistorySize);
         Map<LocalDate, MarketNavPoint> pointsByDate = new LinkedHashMap<>();
 
         for (int pageIndex = 1; pageIndex <= MAX_NAV_PAGE_COUNT && pointsByDate.size() < historySize; pageIndex++) {
@@ -237,6 +297,28 @@ public class EastmoneyFundDataProvider implements FundDataProvider {
         );
     }
 
+    private MarketFundUniverseItem toUniverseItem(JsonNode item) {
+        String fundCode = item.path("FCODE").asText(null);
+        String fundName = item.path("SHORTNAME").asText(null);
+        if (fundCode == null || fundCode.isBlank() || fundName == null || fundName.isBlank()) {
+            return null;
+        }
+        return new MarketFundUniverseItem(
+                fundCode,
+                fundName,
+                fallbackText(item.path("FUNDTYPE").asText(null), item.path("FTYPE").asText(null)),
+                item.path("JJGS").asText(null),
+                item.path("JJJL").asText(null),
+                normalizeScale(parseDecimal(item.path("ENDNAV").asText(null))),
+                parseDecimal(item.path("SYL_Y").asText(null)),
+                parseDecimal(item.path("SYL_3Y").asText(null)),
+                parseDecimal(item.path("SYL_6Y").asText(null)),
+                parseDecimal(item.path("SYL_1N").asText(null)),
+                parseDate(item.path("FSRQ").asText(null)),
+                FundConstants.EASTMONEY_FUND_PAGE_PREFIX + fundCode + ".html"
+        );
+    }
+
     private String fallbackText(String value, String fallback) {
         return value == null || value.isBlank() ? fallback : value;
     }
@@ -251,10 +333,15 @@ public class EastmoneyFundDataProvider implements FundDataProvider {
     }
 
     private LocalDate parseDate(String value) {
-        if (value == null || value.isBlank()) {
+        if (value == null || value.isBlank() || "--".equals(value)) {
             return null;
         }
-        return LocalDate.parse(value);
+        try {
+            return LocalDate.parse(value);
+        } catch (RuntimeException exception) {
+            LOGGER.debug("Ignore invalid eastmoney date value={}", value);
+            return null;
+        }
     }
 
     private BigDecimal parseDecimal(String value) {
@@ -262,6 +349,15 @@ public class EastmoneyFundDataProvider implements FundDataProvider {
             return null;
         }
         return new BigDecimal(value);
+    }
+
+    private BigDecimal normalizeScale(BigDecimal value) {
+        if (value == null) {
+            return null;
+        }
+        return value.abs().compareTo(BigDecimal.valueOf(1_000_000)) > 0
+                ? value.divide(BigDecimal.valueOf(100_000_000), 6, java.math.RoundingMode.HALF_UP)
+                : value;
     }
 
     private static RestClient createRestClient(MarketDataProperties properties) {
