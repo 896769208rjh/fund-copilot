@@ -241,12 +241,14 @@ public class FundQueryService {
         return persistSnapshot(safeFundCode, snapshot);
     }
 
+    @Transactional(rollbackFor = Exception.class)
     public FundDetailVO syncFundIncrementally(String fundCode, int bootstrapHistorySize) {
         String safeFundCode = normalizeFundCode(fundCode);
         long existingNavCount = fundNavMapper.selectCount(new LambdaQueryWrapper<FundNavDO>()
                 .eq(FundNavDO::getFundCode, safeFundCode));
         int historySize = existingNavCount >= 253 ? 40 : bootstrapHistorySize;
-        return syncFund(safeFundCode, historySize);
+        MarketFundSnapshot snapshot = fundDataProvider.fetchSnapshot(safeFundCode, historySize);
+        return persistSnapshot(safeFundCode, snapshot);
     }
 
     private FundDetailVO persistSnapshot(String safeFundCode, MarketFundSnapshot snapshot) {
